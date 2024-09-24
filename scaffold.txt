@@ -1,0 +1,63 @@
+const Scaffold({  
+  Key key,  
+  this.appBar,  
+  this.body,  
+  this.floatingActionButton,  
+  this.floatingActionButtonLocation,  
+  this.persistentFooterButtons,  
+  this.drawer,  
+  this.endDrawer,  
+  this.bottomNavigationBar,  
+  this.bottomSheet,  
+  this.floatingActionButtonAnimator,  
+  this.backgroundColor,  
+  this.resizeToAvoidBottomPadding = true,  
+  this.primary = true,  
+})   
+
+
+
+Example :
+
+
+import 'package:flutter/material.dart';  
+  
+void main() => runApp(MyApp());  
+  
+/// This Widget is the main application widget.  
+class MyApp extends StatelessWidget {  
+  
+  @override  
+  Widget build(BuildContext context) {  
+    return MaterialApp(  
+      home: Scaffold(  
+        => content here....
+      ),  
+    );  
+  }  
+}  
+
+
+
+==================
+
+
+class MyContainerWidget extends StatelessWidget {  
+  @override  
+  Widget build(BuildContext context) {  
+    return MaterialApp(  
+      home: Scaffold(   
+    appBar: AppBar(   
+    title: Text('First Flutter Application'),   
+    ),   
+    body: Center(   
+    child: Text("Welcome to Northern City...",   
+        style: TextStyle( color: Colors.black, fontSize: 30.0,   
+        ),   
+         ),   
+    ),  
+    );  
+  }  
+}  
+
+=====================

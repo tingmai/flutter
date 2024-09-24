@@ -1,0 +1,62 @@
+import 'package:flutter/material.dart';  
+  
+void main() => runApp(MyApp());  
+  
+/// This Widget is the main application widget.  
+class MyApp extends StatelessWidget {  
+  
+  @override  
+  Widget build(BuildContext context) {  
+    return MaterialApp(  
+      home: Scaffold(  
+        appBar: AppBar(  
+          title: Text("Flutter Container Example"),  
+        ),  
+        body: Container(  
+          padding: EdgeInsets.all(35),  
+          margin: EdgeInsets.all(20),  
+          decoration: BoxDecoration(  
+            border: Border.all(color: Colors.black, width: 4),  
+            borderRadius: BorderRadius.circular(8),  
+            boxShadow: [  
+              new BoxShadow(color: Colors.green, offset: new Offset(6.0, 6.0),),  
+            ],  
+          ),  
+          child: Text("Hello! Welcome to Northern City Flutter mobile application development class ... ",  
+              style: TextStyle(fontSize: 30)),  
+        ),  
+      ),  
+    );  
+  }  
+}  
+
+
+
+==================
+
+
+class MyContainerWidget extends StatelessWidget {  
+  @override  
+  Widget build(BuildContext context) {  
+    return MaterialApp(  
+      home: Scaffold(  
+        appBar: AppBar(  
+          title: Text("Flutter Container Example"),  
+        ),  
+        body: Container(  
+          width: double.infinity,  
+          height: 150.0,  
+          color: Colors.green,  
+          margin: EdgeInsets.all(25),  
+          padding: EdgeInsets.all(35),  
+          alignment: Alignment.center,  
+          transform: Matrix4.rotationZ(0.1),  
+          child: Text("Hello! I am in the container widget!!",  
+              style: TextStyle(fontSize: 25)),  
+        ),  
+      ),  
+    );  
+  }  
+}  
+
+=====================
