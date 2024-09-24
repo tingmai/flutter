@@ -1,0 +1,60 @@
+Example 1:
+
+
+class MyApp extends StatelessWidget {  
+  @override  
+  Widget build(BuildContext context) {  
+    return Scaffold(  
+      appBar: AppBar(  
+        title: Text('Flutter Icon Tutorial'),  
+      ),  
+      body: Row(  
+        mainAxisAlignment: MainAxisAlignment.spaceAround,  
+          children: <Widget>[  
+            Icon(Icons.camera_enhance),  
+            Icon(Icons.camera_front),  
+            Icon(Icons.camera_rear),  
+      ]),  
+    );  
+  }  
+}  
+
+
+==================
+
+Example 2:
+
+====================
+
+class MyApp extends StatelessWidget {  
+  @override  
+  Widget build(BuildContext context) {  
+    return Scaffold(  
+      appBar: AppBar(  
+        title: Text('Flutter Icon Tutorial'),  
+      ),  
+      body: Row(  
+        mainAxisAlignment: MainAxisAlignment.spaceAround,  
+          children: <Widget>[  
+            Icon(  
+              Icons.camera_enhance,  
+              size: 70,  
+              color:Colors.green  
+            ),  
+            Icon(  
+              Icons.camera_front,  
+              size: 70,  
+              color:Colors.orange  
+            ),  
+            Icon(  
+              Icons.camera_rear,  
+              size: 70,  
+              color:Colors.black  
+            ),  
+      ]),  
+    );  
+  }  
+}  
+
+
+============
