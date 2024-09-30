@@ -15,6 +15,24 @@ Example 1:
 =======================
 
 
+
+class ImagePage extends StatelessWidget {
+  const ImagePage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+        child: Image(
+      image: AssetImage('images/photo1.png'),
+      width: 400,
+      height: 400,
+    ));
+  }
+}
+
+===============================================
+
+
 class MyApp extends StatelessWidget {  
   @override  
   Widget build(BuildContext context) {  
