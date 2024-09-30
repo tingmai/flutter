@@ -1,0 +1,72 @@
+Image Display:
+---------------
+ @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text("Flutter Image Example 1"),
+        centerTitle: true,
+        backgroundColor: Colors.blue[900],
+      ),
+      body: Center(
+        child: Image.network(
+          "https://cdn.pixabay.com/photo/2018/04/26/12/14/travel-3351825_1280.jpg",
+          height: 200,
+          width: 200,
+        ),
+      ),
+    );
+  }
+
+-----------------
+
+create folder images
+copy and paste photo to the images
+config pubspec.yaml as the followings:
+
+flutter:
+   assets
+     - images
+
+==========================
+
+@override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text("Flutter Image Example 2"),
+        centerTitle: true,
+        backgroundColor: Colors.blue[900],
+      ),
+      body: Center(
+        child: Image.asset(
+          "images/photo1.png",
+          height: 200,
+          width: 200,
+        ),
+      ),
+    );
+  }
+
+==========================
+
+ @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text("Flutter Image Example 3"),
+        centerTitle: true,
+        backgroundColor: Colors.blue[900],
+      ),
+      body: Center(
+        child: CircleAvatar(
+          backgroundImage: NetworkImage(
+              "https://cdn.pixabay.com/photo/2018/04/26/12/14/travel-3351825_1280.jpg"),
+          radius: 50,
+        ),
+      ),
+    );
+  }
+
+=========================
+
