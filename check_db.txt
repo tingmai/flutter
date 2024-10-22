@@ -1,0 +1,32 @@
+
+
+
+
+c:\users\nc\AppData\Local\Android\sdk\platform-tools>
+
+[command]
+adb devices
+
+List of devices attached
+emulator-5555 device
+
+c:\users\nc\AppData\Local\Android\sdk\platform-tools>adb -s emulator-5555 shell
+
+
+generic_x86_arm:/ $ run as com.example.sqlite_crud
+generic_x86_arm:/data/data/com.example.slite_crud $ cd /data/user/0/com.example.sqlite_crud/app_flutter
+generic_x86_arm:/data/user/0/com.example.sqlite_crud/app_flutter $ sqlite3 crud1.db
+
+sqlite> . tables
+android_metadata products
+sqlite> select * from products;
+
+1  apple 1000
+2  orange 2000
+
+----------------------------
+
+
+
+
+
