@@ -1,0 +1,505 @@
+Laravel 11 API & Flutter
+=============================
+
+pubspec.yaml
+-------------
+
+
+dependencies:
+
+http:^0.13.3
+shared_preference: ^2.0.6
+image_picker: ^0.7.5+4
+
+
+======================================= 
+
+Anroid/app/src/main/AndroidManifest.xml
+
+<package="com.app1">
+=> <uses permission android:name="android.permission.INTERNET"/>
+<application
+    	android:label="app1"
+	android:icocn="'@mipmap/ic_launcher"
+	=> android:usesCleartextTraffic="true"
+	=> android:requestLegacyExternalStorage="true">
+
+
+
+	<activity
+	android:launchMode="singleTop"
+	android:theme="stle/LaunchTheme"
+	android:configChannges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|lacale|layoutDirection|fontScale|
+	android:hardwareAcelerated="true"
+	android:windowSoftInputMode="adjustResize"
+
+
+    ...
+     ...
+
+
+==============================================
+
+
+android/app/src/build.gradle
+
+
+	defaultConfig{
+		applicationId "com.app1"
+		=>minSdkVersion 21
+		targestSdkVersion 30
+		versionCode flutterVersionCode.toInteger()
+		versionName flutterVersionName
+
+============================================
+
+
+
+
+create the folders:
+
+
+pages
+services
+models
+
+
+pages
+	-loading.dart
+	-login.dart
+	-register.dart
+	-profile.dart
+	-logout.dart
+
+
+services
+	- 
+
+
+models
+	User.dart
+
+
+============================================
+
+loading.dart
+
+
+class _LoadingState extends State<Loading>{
+
+
+void _loadUserInof() async{
+   String token=await getToken();
+  	 if(token==''){
+	Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder:(context)=>Login()),(route)=>false);
+   	}
+	else{
+
+	ApiResponse response=await getProfile();
+
+	if(response.error==null){
+
+          Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder:(context)=>Login()),(route)=>false);
+	}
+	else if(response.error==unauthorized){
+           Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder:(context)=>Login()),(route)=>false);
+	}
+	else{
+		ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+		content: Text('${response.error}'),
+		));
+
+	}
+	
+
+	}
+}
+
+
+@overrite
+void initState(){
+
+	_loadUserInfo();
+	super.initState();
+
+}
+
+
+@overrite
+Widget build(BuildContext context){
+return Container(
+
+	height:Mediaquery.of(context).size.height,
+	color:Color.white,
+	child: Center(
+		child:CircularProgressIndicator(),
+	),
+);
+
+}
+
+}
+
+==========================================
+models/api_response.dart
+
+class ApiResponse{
+
+	Object? data;
+	String? error;
+
+}
+
+====================================================
+
+models/user.dart
+
+
+class User{
+
+	int? id;
+	String? name;
+	String? image;
+	String? email;
+	String? token;
+
+
+	User({
+		this.id,
+		thihs.name,
+		this.image,
+		this.email,
+		this.token
+	});
+
+	factory User.fromJson(Map<String,dynamic> json){
+		
+		return User(
+			id: json['user']['id'],
+			name:json['user']['name'],
+			image:json['user']['image'],
+			email:json['user']['email'],
+			token:json['user']['token']
+		);
+
+	}
+
+}
+
+
+
+======================================
+
+lib/constant.dart
+
+
+const baseUrl='http://localhost:8000/api';
+const loginUrl=baseUrl+'/login';
+const registterUrl=baseUrl+'/register';
+const logoutUr=baseUrl +'/logout';
+const userUrl=baseUrl +'/users';
+const postUrl=baseUrl + '/posts';
+const commentsUrl=baseUrl + '/comments';
+
+const serverError='Server Error';
+const unauthorized='Unauthorized';
+const somethingWentWrong='Something went wrong, try again...';
+
+
+//-- input decoration
+InputDecoration kInputDecoration(String label){
+
+  return InputDecoration(
+	   labelText:label,
+	   contentPadding:EdgeInsets.all(10),
+	   border:OutlineInputBorder(borderSide:BorderSide(width:1,color:Colors.gray));
+	);
+
+
+}
+
+
+//button
+TextButton myTextButton(String label,Function onPressed){
+
+	return TextButton(
+		child:Text(label,style:TextStyle(color:Colors.white),),
+		style:ButtonStyle(
+			backgroundColor:MasterialStateColor.resolveWith((states)=>Colors.blue),
+			padding:MaterialStateProperty.resolveWith((states)=>EdgeInsets.symmetric(vertical:10)),
+		),
+
+	);
+
+}
+
+=================================================
+
+
+services/userr_uservice.dart
+
+
+import 'package:app1/constant.dart';
+import 'package:app1/models/api_response.dart';
+import 'package:app1/models/user.dart';
+import 'package:http/http.dart' as http;
+
+
+
+//login
+Future<ApiResponse> login(String email,String password) assync{
+
+	ApiResponse apiResponse=ApiResponse();
+
+	try{
+
+	final response=await http.post(
+
+	   	Uri.parse(loginUrl),
+		headers:{'Accept':'application/json'},
+		body: {'email':email,'password':password}
+
+	);
+
+
+	switch(response.statusCode){
+
+
+		case 200:
+			apiResponse.data=User.fromJson(jsonDecode(response.body));
+		break;
+		case 422:
+			final errors=jsonDecode(response.body)['errors'];
+			apiResponse.error=errors[errors.keys.elementAt(0)][0];
+
+		break;
+		case 403:
+			apiResponse.error=jsonDecode(response.body)['message'];
+		break;
+		default:
+			apiResponse.error=somethingWentWrong;
+		break;
+
+
+
+
+	}
+
+	catch(err){
+
+           apiResponse.error=serverError;
+	}
+
+
+   return apiResponse;
+}
+ 
+
+
+//register
+Future<ApiResponse> register(String username,String email,String password) assync{
+
+	ApiResponse apiResponse=ApiResponse();
+
+	try{
+
+	final response=await http.post(
+
+	   	Uri.parse(registerUrl),
+		headers:{'Accept':'application/json'},
+		body: {'name':name,'email':email,'password':password,'c_password':password}
+
+	);
+
+
+	switch(response.statusCode){
+
+
+		case 200:
+			apiResponse.data=User.fromJson(jsonDecode(response.body));
+		break;
+		case 422:
+			final errors=jsonDecode(response.body)['errors'];
+			apiResponse.error=errors[errors.keys.elementAt(0)][0];
+
+		break;
+		case 403:
+			apiResponse.error=jsonDecode(response.body)['message'];
+		break;
+		default:
+			apiResponse.error=somethingWentWrong;
+		break;
+
+
+
+
+	}
+
+	catch(err){
+
+           apiResponse.error=serverError;
+	}
+
+
+   return apiResponse;
+}
+
+
+//profile page
+
+
+Future<ApiResponse> getProfile() async{
+
+	ApiResponse apiResponse=ApiResponse();
+
+	try{
+	String token=await getToken();
+	final response=await http.post(
+
+	   	Uri.parse(userUrl),
+		headers:{'Accept':'application/json', 'Authorization':'Bearer $token'},
+		
+
+	);
+
+
+	switch(response.statusCode){
+
+
+		case 200:
+			apiResponse.data=User.fromJson(jsonDecode(response.body));
+		break;
+		case 422:
+			final errors=jsonDecode(response.body)['errors'];
+			apiResponse.error=errors[errors.keys.elementAt(0)][0];
+
+		break;
+		case 403:
+			apiResponse.error=jsonDecode(response.body)['message'];
+		break;
+		default:
+			apiResponse.error=somethingWentWrong;
+		break;
+
+
+
+
+	}
+
+	catch(err){
+
+           apiResponse.error=serverError;
+	}
+
+
+   return apiResponse;
+
+}
+
+
+
+
+
+//get token
+Future<String> getToken() async{
+
+	SharedPreferences pref=await SharedPreferences.getInstance();
+	return perf.getString('token') ?? '';
+
+}
+
+//get user id
+Future<int> getToken() async{
+
+	SharedPreferences pref=await SharedPreferences.getInstance();
+	return perf.getInt('userId') ?? 0;
+
+}
+
+
+//logout
+Future<bool> logout() async{
+
+	SharedPreferences pref=await SharedPreferences.getInstance();
+	return await pref.remove('token');
+
+}
+
+
+
+
+=========================
+
+login.dart
+
+
+class _LoginState extends State<Login>{
+
+
+final GlobalKey<FormState> formkey=GlobalKey<FormState>();
+textEditingController textEmail=textEditingController();
+textEditingController textPassword=textEditingController();
+
+
+
+
+
+@override
+Widget build(BuildContext context){
+
+
+body:form(
+
+	key:formkey,
+	child:ListView(
+		padding:EdgeInsets.all(32),
+		children:[
+			
+		textformField(
+			keyboardType:TextInputType.emailAddress,
+			controller:textEmail,
+			validator:(val) => val!.isEmpty ? 'Invalid Email Address' : null,
+			decoration:kInputDecoration('Email'),
+			
+		 ),
+
+		SizedBox(height:10,),
+
+		textformField(
+			
+			controller:textPassword,
+			obscureText:true,
+			validator:(val) => val!.isEmpty ? 'Required at least 6 chars' : null,
+			decoration:decoration:kInputDecoration('Email'),
+		 ),
+
+		SizedBox(height:10,),
+
+		Row(
+			mainAxisAligment: MainAxisAlignment.center,
+			children:[
+
+				Text('Dont have an account?'),
+				GestureDector(
+				   child: Text
+				),
+			],
+		),
+
+
+		]
+	),
+	),
+
+
+
+}
+
+
+
+
+}
+
+
+
+
