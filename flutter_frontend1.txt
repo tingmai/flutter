@@ -228,8 +228,30 @@ TextButton myTextButton(String label,Function onPressed){
 			backgroundColor:MasterialStateColor.resolveWith((states)=>Colors.blue),
 			padding:MaterialStateProperty.resolveWith((states)=>EdgeInsets.symmetric(vertical:10)),
 		),
+		onPressed: ()=>onPressed(),
 
 	);
+
+}
+
+//login Register Hints
+
+Row myLoginRegisterHint(String text,String label,Function onTap){
+
+return Row(
+	
+	mainAxisAligment: MainAxisAligment.center,
+	children:[
+	  Text: (text),
+	  GustureDetector(
+	       text: Text(label,style:TextStyle(color:Colors.blue)),
+	        onTap:()=>onTap,
+	  ),
+
+	],
+
+
+);
 
 }
 
@@ -441,6 +463,32 @@ textEditingController textEmail=textEditingController();
 textEditingController textPassword=textEditingController();
 
 
+void _loginUser() async{
+
+	ApiResponse response=await login(textEmail.text,textPassword.text);
+
+	if(response.error==null){
+		_saveAndRedirectToProfile(response.data as User)
+
+	}
+
+	else{
+
+		ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+			content:Text('${response.error}')
+		));
+	}
+}
+
+
+void _saveAdRedirectToProfile(User user)async{
+
+	SharedPreferences pref=await SharedPreferences.getInstance();
+	await pref.setString('token',user.token ?? '');
+	await pref.setInt('userId',user.id ?? 0);
+	Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder:(context)=>Profile()),(route)=>false);
+
+}
 
 
 
@@ -469,12 +517,31 @@ body:form(
 			
 			controller:textPassword,
 			obscureText:true,
-			validator:(val) => val!.isEmpty ? 'Required at least 6 chars' : null,
+			validator:(val) => val!.length<6 ? 'Required at least 6 chars' : null,
 			decoration:decoration:kInputDecoration('Email'),
 		 ),
 
 		SizedBox(height:10,),
+		TextButton(
 
+			child: Text('Login', style:TextStyle(color:Colors.white),),
+			style:ButtonStyle(
+				backgroundColor:MaterialStateColor.resolvewith((states) => Colors.blue),
+				padding:MaterialStateProperty.resolveWith((states)=>EdgeInserts.symmetric(verticl:10))
+			),
+
+			onPressed:(){
+				if(formkey.currentState!.validate()){
+				    _loginUser();
+
+				}
+			},
+
+		),
+
+		SizedBox(height:10,),
+
+		/*
 		Row(
 			mainAxisAligment: MainAxisAlignment.center,
 			children:[
@@ -484,7 +551,12 @@ body:form(
 				   child: Text
 				),
 			],
-		),
+		  ),*/
+		  
+		 myLoginRegisterHint('Dont have an account?','Regiser',(){
+			Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder:(context)=>Register()),(route)=>false);
+
+		})
 
 
 		]
@@ -499,6 +571,460 @@ body:form(
 
 
 }
+
+
+
+
+===============================
+
+
+register.dart
+
+
+import 'package:app1/models/api_response.dart';
+import 'package:app1/models/user.dart';
+import 'package:app1/views/profile.dart';
+import 'package:app1/services/user_service.dart';
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../constant.dart';
+import 'login.dart';
+
+
+
+
+class Register extends StatefulWidget{
+
+	@override
+	_RegisterState createState()=>_RegisterState();
+}
+
+class _RegisterState extends State<Register>{
+
+     GlobalKey<FormState> formkey=GlobalKey<FormState>();
+
+	bool loading=false;
+	TextEditingController nameController=TextEditingController();
+	TextEditingController emailController=TextEditingController();
+	TextEditingController passwordController=TextEditingController();
+	TextEditingController confirmPasswordController=TextEditingController();
+
+
+	void _registerUser() async{
+
+		ApiResponse response= await register(nameController.text,emailController.text,passwordController.text);
+
+		if(response.error==null){
+			_saveAndRedirectToProfile(response.data as User);
+			
+
+		}
+		else{
+		      setState((){
+
+			loading=!loading;
+
+			});
+
+			ScaffoldMessage.of(context).showSnackBar(SnackBar(
+				context:Text('${responsee.error}')
+			));
+
+		
+		}
+
+	}
+
+
+       @override
+	Widget build(BuildContext context){
+
+	return Scaffold(
+
+		AppBar:AppBar(
+		   title:Text('Regiser'),
+			centerTitle:true,
+		 ),
+		body:Form(
+
+			key:formkey,
+			child: ListView(
+				
+				padding:const EdgeInserts.symmetric(horizontal:12,vertical 32),
+				children:[
+					
+				TextFormField(
+				controller:nameController,
+				validator:(val)=>val!.isEmpty ? 'Invalid name ' : null,
+
+				decoration: myInputDecoration('Name")
+				), //TextFormField
+
+				SizedBox(height:20,),
+
+
+				TextFormField(
+				controller:nameController,
+				validator:(val)=>val!.isEmpty ? 'Invalid name ' : null,
+
+				decoration: myInputDecoration('Email")
+				), //TextFormField
+
+				SizedBox(height:20,),
+
+
+				TextFormField(
+				controller:nameController,
+				obscureText:true,
+				validator:(val)=>val!.length < 6 ? 'Invalid name ' : null,
+
+				decoration: myInputDecoration('Password")
+				), //TextFormField
+
+
+				SizedBox(height:20,),
+
+
+				TextFormField(
+				controller:nameController,
+				obscureText:true,
+				validator:(val)=>val !=passwordController.text ? 'Confirm Password does not match ' : null,
+
+				decoration: myInputDecoration('Confirm Password")
+				), //TextFormField
+
+				
+ 				SizedBox(height:20,),
+
+
+				loading? Center(child:CircularProgressIndicataor()):
+				myTextButton('Register',(){
+					if(formkey.currentState!.validate()){
+						setState((){
+
+						loading=!loading;
+						_registerUser();
+
+						});
+
+					}
+				}
+
+				]
+
+			),
+		),
+
+
+
+			
+
+	);
+
+	}
+
+
+}
+
+=========================================
+
+views/profile.dart
+-----------------
+
+import 'package:flutter/material.dart';
+
+import '../constant.dart';
+import 'login.dart';
+
+
+
+class Profile extends StatefulWidget{
+
+	@override
+	_ProfileState createState()=>_ProfileState();
+}
+
+class _ProfileState extends State<Profile>{
+
+	@override
+	Widget build(BuildContext context){
+
+	return scaffold(
+		body: Center(
+			
+			child: Column(
+			
+			children:[
+
+			Text ('Profile Page'),
+			SizedBox(height:20),
+	  		GustureDetector(
+	       			child: Text('Logout',style:TextStyle(color:Colors.blue)),
+	        		onTap:(){
+
+				logout().then((value)=>{
+					Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (context) => Login()), (route) =>false);
+					
+                                   });
+				},
+	  			),
+
+			],
+
+			),
+		),
+		);
+
+	}
+}
+
+================================
+
+
+
+views/home.dart
+
+import 'package:flutter/material.dart';
+
+import '../constant.dart';
+import 'login.dart';
+
+
+
+class Home extends StatefulWidget{
+
+	@override
+	_HomeState createState()=>_HomeState();
+}
+
+class _HomeState extends State<Home>{
+
+	int currentIndex=0;
+
+	@override
+	Widget build(BuildContext context){
+
+	return scaffold(
+		appBar:AppBar(
+		  title:Text('NC App'),
+		  actions:[
+
+			IconButton(
+				icon:Icon(Icons.exit_to_app),
+				onPressed: (){
+
+					logout().then((value)=>{
+					
+					Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder:(context)=>Login()),(route)=>false);
+
+					});
+				},
+			)
+		]
+		),
+		
+		body: currentIndex=0 ? PostIndex() : Profile(),
+
+		FloatActionButton:FloatingActionButton(
+
+			onPressed: (){
+			
+				Navigator.of(context).push(MaterialPageRoute(builder:(context) => PostCreate()),(context)=>false),
+
+			},
+			child:Icon(Icon.add),
+
+		),
+		floatingActionButtonLocation:FloatingActionButtonLocation.centerDocked,
+
+		bottomNavigationBar: BottomAppBar(
+			notchMargin:5,
+			elevatioon:10,
+			clipBehavior:Clip.antiAlias,
+			shape:CircularNotchedRectangle(),
+		
+			items:[
+				BottomNavigationBarItem(
+					icon:Icon(Icons.home),
+					label:''
+				),
+				BottomNavigationBarItem(
+					icon:Icon(Icons.list),
+					label:''
+				),
+				BottomNavigationBarItem(
+					icon:Icon(Icons.money),
+					label:''
+				),
+				BottomNavigationBarItem(
+					icon:Icon(Icons.person),
+					label:''
+				),
+			
+			],
+
+			currentIndex:currentIndex,
+			onTap:(val){
+			setState((){
+
+				currentIndex=val;
+			});
+
+			},
+
+		),
+		
+	);
+
+	}
+}
+
+
+===============================================
+
+
+views/posts.dart
+
+
+return scaffold(
+
+	appBar:AppBara(
+
+		title:Text('Post Index'),
+		
+	),
+
+	body: 
+
+
+
+);
+
+
+
+
+=================================================
+
+view/post_create.dart
+
+
+views/posts.dart
+
+
+import 'package:app1/constant.dart';
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+
+
+
+
+
+class _PostCreateState extends State<PostCreate>{
+
+final Global<FormState> _formkey=GlobalKey<FormState>();
+final TextEditingController _textBodyController=TextEditingController();
+bool loading= false;
+
+file imageFile;
+final _imgPicker=imagePicker();
+
+Future getImage() async{
+
+	final pickedFile=await _picker.getImage(source:ImageSource.gallery);
+	if(pickedFile !=null){
+		seteState((){
+                   _imageFile=File(pickedFile.path);
+		});
+		
+	}
+
+}
+
+
+return scaffold(
+
+	appBar:AppBara(
+
+		title:Text('Post Create'),
+		
+	),
+
+	body: ListView(
+
+		children:[
+		 Container(
+
+			width:MediaQuery.of(context).size.width,
+			height:200,
+			child:Center(
+			    child:IconButton(
+				icon:Icon(Icons.image, size:50, color.black38),
+				onPressed:(){
+					getImage();
+				}
+				),
+			),
+		), //Container
+
+
+		Form(
+			key: _formkey,
+			child:Padding(
+				padding:EdgeInsets.all(8),
+				child:TextFormField(
+					
+					keyboardType:TextInputType.multiline,
+					maxlines:9,
+					controller:_textBodyController,
+					validator:(val) => val!.isEmpty ? 'Post contents is required' : null,
+					decoration:InputDecoration(
+
+					hintText: 'Post Body ... ',
+					border: OutlineInputBorder(borderSide:BorderSide(width:1,color:colors.black38)),
+
+					),
+
+				),
+			),
+
+		),//Form
+
+		Padding(
+			padding:EdgeInsets.symmetric(horizontal:8),
+			child:myTextButton('Post',(){
+
+				if(_formkey.currentState!.validate()){
+				setState((){
+				_loading=!_loading;
+				});
+
+				}
+			}),
+		),
+
+		],
+	
+
+	),
+
+
+
+);
+
+
+
+
+}
+
+
+}
+
+
+
+====================================================
+
 
 
 
