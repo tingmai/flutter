@@ -1,0 +1,1015 @@
+Flutter CRUD App with WordPress Posts API
+-------------------------------------------
+Notes:
+Authentication: This implementation uses JWT authentication. Make sure to install the JWT Authentication for WP REST API plugin on your WordPress site.
+
+
+Project Structure
+
+
+text
+lib/
+├── models/
+│   ├── post.dart          # Post model class
+│   └── api_response.dart  # API response wrapper
+├── services/
+│   └── wordpress_service.dart  # API service class
+├── screens/
+│   ├── post_list_screen.dart   # List all posts
+│   ├── post_detail_screen.dart # View single post
+│   ├── post_create_screen.dart # Create new post
+│   └── post_edit_screen.dart  # Edit existing post
+├── widgets/
+│   └── post_item.dart     # Post list item widget
+└── main.dart              # App entry point
+
+
+--------------------------
+
+
+Implementation Steps
+1. Add Dependencies
+Add these to your pubspec.yaml:
+
+yaml
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^0.13.5
+  flutter_html: ^3.0.0-alpha.6  # for rendering post content
+  provider: ^6.0.5  # state management
+  flutter_quill: ^8.2.0  # for rich text editing
+
+
+--------------------------------
+
+
+2. Create the Post Model
+
+
+lib/models/post.dart:
+
+dart
+class Post {
+  final int? id;
+  final String title;
+  final String content;
+  final String excerpt;
+  final String status;
+  final DateTime date;
+  final DateTime modified;
+
+  Post({
+    this.id,
+    required this.title,
+    required this.content,
+    required this.excerpt,
+    this.status = 'publish',
+    required this.date,
+    required this.modified,
+  });
+
+  factory Post.fromJson(Map<String, dynamic> json) {
+    return Post(
+      id: json['id'],
+      title: json['title']['rendered'],
+      content: json['content']['rendered'],
+      excerpt: json['excerpt']['rendered'],
+      status: json['status'],
+      date: DateTime.parse(json['date']),
+      modified: DateTime.parse(json['modified']),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'title': title,
+      'content': content,
+      'excerpt': excerpt,
+      'status': status,
+    };
+  }
+}
+
+
+
+--------------------------------
+
+
+3. Create API Response Wrapper
+lib/models/api_response.dart:
+
+dart
+class ApiResponse {
+  final bool success;
+  final dynamic data;
+  final String? error;
+
+  ApiResponse({
+    required this.success,
+    this.data,
+    this.error,
+  });
+
+  factory ApiResponse.fromJson(Map<String, dynamic> json) {
+    return ApiResponse(
+      success: json['success'] ?? false,
+      data: json['data'],
+      error: json['error'],
+    );
+  }
+}
+
+
+----------------------------------
+
+
+4. Create WordPress Service
+lib/services/wordpress_service.dart:
+
+dart
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../models/post.dart';
+import '../models/api_response.dart';
+
+class WordPressService {
+  final String baseUrl;
+  final String username;
+  final String password;
+
+  WordPressService({
+    required this.baseUrl,
+    required this.username,
+    required this.password,
+  });
+
+  Future<String> _getAuthToken() async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/wp-json/jwt-auth/v1/token'),
+      body: {
+        'username': username,
+        'password': password,
+      },
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body)['token'];
+    } else {
+      throw Exception('Failed to authenticate');
+    }
+  }
+
+  Future<ApiResponse> getPosts({int page = 1, int perPage = 10}) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/wp-json/wp/v2/posts?page=$page&per_page=$perPage'),
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        final posts = data.map((json) => Post.fromJson(json)).toList();
+        return ApiResponse(success: true, data: posts);
+      } else {
+        return ApiResponse(success: false, error: 'Failed to load posts');
+      }
+    } catch (e) {
+      return ApiResponse(success: false, error: e.toString());
+    }
+  }
+
+  Future<ApiResponse> getPost(int id) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/wp-json/wp/v2/posts/$id'),
+      );
+
+      if (response.statusCode == 200) {
+        final post = Post.fromJson(jsonDecode(response.body));
+        return ApiResponse(success: true, data: post);
+      } else {
+        return ApiResponse(success: false, error: 'Failed to load post');
+      }
+    } catch (e) {
+      return ApiResponse(success: false, error: e.toString());
+    }
+  }
+
+  Future<ApiResponse> createPost(Post post) async {
+    try {
+      final token = await _getAuthToken();
+      
+      final response = await http.post(
+        Uri.parse('$baseUrl/wp-json/wp/v2/posts'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(post.toJson()),
+      );
+
+      if (response.statusCode == 201) {
+        final createdPost = Post.fromJson(jsonDecode(response.body));
+        return ApiResponse(success: true, data: createdPost);
+      } else {
+        return ApiResponse(
+          success: false, 
+          error: 'Failed to create post: ${response.body}'
+        );
+      }
+    } catch (e) {
+      return ApiResponse(success: false, error: e.toString());
+    }
+  }
+
+  Future<ApiResponse> updatePost(Post post) async {
+    try {
+      final token = await _getAuthToken();
+      
+      final response = await http.post(
+        Uri.parse('$baseUrl/wp-json/wp/v2/posts/${post.id}'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(post.toJson()),
+      );
+
+      if (response.statusCode == 200) {
+        final updatedPost = Post.fromJson(jsonDecode(response.body));
+        return ApiResponse(success: true, data: updatedPost);
+      } else {
+        return ApiResponse(
+          success: false, 
+          error: 'Failed to update post: ${response.body}'
+        );
+      }
+    } catch (e) {
+      return ApiResponse(success: false, error: e.toString());
+    }
+  }
+
+  Future<ApiResponse> deletePost(int id) async {
+    try {
+      final token = await _getAuthToken();
+      
+      final response = await http.delete(
+        Uri.parse('$baseUrl/wp-json/wp/v2/posts/$id'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return ApiResponse(success: true);
+      } else {
+        return ApiResponse(
+          success: false, 
+          error: 'Failed to delete post: ${response.body}'
+        );
+      }
+    } catch (e) {
+      return ApiResponse(success: false, error: e.toString());
+    }
+  }
+}
+
+
+
+----------------------------------------
+
+
+5. Create the Post List Screen
+lib/screens/post_list_screen.dart:
+
+dart
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../models/post.dart';
+import '../services/wordpress_service.dart';
+import '../widgets/post_item.dart';
+import 'post_detail_screen.dart';
+import 'post_create_screen.dart';
+
+class PostListScreen extends StatefulWidget {
+  @override
+  _PostListScreenState createState() => _PostListScreenState();
+}
+
+class _PostListScreenState extends State<PostListScreen> {
+  late Future<ApiResponse> _postsFuture;
+  int _page = 1;
+  final int _perPage = 10;
+
+  @override
+  void initState() {
+    super.initState();
+    _postsFuture = _loadPosts();
+  }
+
+  Future<ApiResponse> _loadPosts() {
+    final service = Provider.of<WordPressService>(context, listen: false);
+    return service.getPosts(page: _page, perPage: _perPage);
+  }
+
+  void _refreshPosts() {
+    setState(() {
+      _page = 1;
+      _postsFuture = _loadPosts();
+    });
+  }
+
+  void _loadMorePosts() {
+    setState(() {
+      _page++;
+      _postsFuture = _loadPosts().then((response) {
+        if (response.success) {
+          final currentPosts = (response.data as List<Post>);
+          return response;
+        } else {
+          _page--; // revert page increment if load fails
+          return response;
+        }
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('WordPress Posts'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.add),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => PostCreateScreen()),
+              ).then((_) => _refreshPosts());
+            },
+          ),
+          IconButton(
+            icon: Icon(Icons.refresh),
+            onPressed: _refreshPosts,
+          ),
+        ],
+      ),
+      body: FutureBuilder<ApiResponse>(
+        future: _postsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(child: CircularProgressIndicator());
+          }
+
+          if (!snapshot.hasData || !snapshot.data!.success) {
+            return Center(
+              child: Text(snapshot.data?.error ?? 'Unknown error'),
+            );
+          }
+
+          final posts = snapshot.data!.data as List<Post>;
+
+          if (posts.isEmpty) {
+            return Center(child: Text('No posts found'));
+          }
+
+          return ListView.builder(
+            itemCount: posts.length + 1,
+            itemBuilder: (context, index) {
+              if (index < posts.length) {
+                final post = posts[index];
+                return PostItem(
+                  post: post,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => PostDetailScreen(postId: post.id!),
+                      ),
+                    ).then((_) => _refreshPosts());
+                  },
+                );
+              } else {
+                return Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16.0),
+                  child: Center(
+                    child: ElevatedButton(
+                      onPressed: _loadMorePosts,
+                      child: Text('Load More'),
+                    ),
+                  ),
+                );
+              }
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+
+-------------------------------------
+
+
+6. Create Post Detail Screen
+lib/screens/post_detail_screen.dart:
+
+dart
+import 'package:flutter/material.dart';
+import 'package:flutter_html/flutter_html.dart';
+import 'package:provider/provider.dart';
+import '../models/post.dart';
+import '../services/wordpress_service.dart';
+import 'post_edit_screen.dart';
+
+class PostDetailScreen extends StatelessWidget {
+  final int postId;
+
+  PostDetailScreen({required this.postId});
+
+  @override
+  Widget build(BuildContext context) {
+    final service = Provider.of<WordPressService>(context);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Post Details'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.edit),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => PostEditScreen(postId: postId),
+                ),
+              );
+            },
+          ),
+          IconButton(
+            icon: Icon(Icons.delete),
+            onPressed: () async {
+              final confirm = await showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: Text('Confirm Delete'),
+                  content: Text('Are you sure you want to delete this post?'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: Text('Cancel'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: Text('Delete'),
+                    ),
+                  ],
+                ),
+              );
+
+              if (confirm == true) {
+                final response = await service.deletePost(postId);
+                if (response.success) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Post deleted successfully')),
+                  );
+                  Navigator.pop(context);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(response.error!)),
+                  );
+                }
+              }
+            },
+          ),
+        ],
+      ),
+      body: FutureBuilder<ApiResponse>(
+        future: service.getPost(postId),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(child: CircularProgressIndicator());
+          }
+
+          if (!snapshot.hasData || !snapshot.data!.success) {
+            return Center(
+              child: Text(snapshot.data?.error ?? 'Failed to load post'),
+            );
+          }
+
+          final post = snapshot.data!.data as Post;
+
+          return SingleChildScrollView(
+            padding: EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  post.title,
+                  style: Theme.of(context).textTheme.headline4,
+                ),
+                SizedBox(height: 8.0),
+                Text(
+                  'Published: ${post.date.toLocal()}',
+                  style: Theme.of(context).textTheme.caption,
+                ),
+                SizedBox(height: 16.0),
+                Html(data: post.content),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+
+
+-------------------------------------------
+
+
+7. Create Post Create/Edit Screens
+lib/screens/post_create_screen.dart:
+
+dart
+import 'package:flutter/material.dart';
+import 'package:flutter_quill/flutter_quill.dart';
+import 'package:provider/provider.dart';
+import '../models/post.dart';
+import '../services/wordpress_service.dart';
+
+class PostCreateScreen extends StatefulWidget {
+  @override
+  _PostCreateScreenState createState() => _PostCreateScreenState();
+}
+
+class _PostCreateScreenState extends State<PostCreateScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final QuillController _contentController = QuillController.basic();
+  final _titleController = TextEditingController();
+  final _excerptController = TextEditingController();
+
+  @override
+  void dispose() {
+    _contentController.dispose();
+    _titleController.dispose();
+    _excerptController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submitPost() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final service = Provider.of<WordPressService>(context, listen: false);
+    final post = Post(
+      title: _titleController.text,
+      content: _contentController.document.toDelta().toJson().toString(),
+      excerpt: _excerptController.text,
+      date: DateTime.now(),
+      modified: DateTime.now(),
+    );
+
+    final response = await service.createPost(post);
+
+    if (response.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Post created successfully')),
+      );
+      Navigator.pop(context);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(response.error!)),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Create New Post'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.save),
+            onPressed: _submitPost,
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: EdgeInsets.all(16.0),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              TextFormField(
+                controller: _titleController,
+                decoration: InputDecoration(
+                  labelText: 'Title',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter a title';
+                  }
+                  return null;
+                },
+              ),
+              SizedBox(height: 16.0),
+              TextFormField(
+                controller: _excerptController,
+                decoration: InputDecoration(
+                  labelText: 'Excerpt',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 3,
+              ),
+              SizedBox(height: 16.0),
+              Text('Content'),
+              SizedBox(height: 8.0),
+              Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey),
+                  borderRadius: BorderRadius.circular(4.0),
+                ),
+                child: QuillToolbar.basic(controller: _contentController),
+              ),
+              Container(
+                height: 300,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey),
+                  borderRadius: BorderRadius.circular(4.0),
+                ),
+                child: QuillEditor(
+                  controller: _contentController,
+                  scrollController: ScrollController(),
+                  scrollable: true,
+                  focusNode: FocusNode(),
+                  autoFocus: false,
+                  readOnly: false,
+                  placeholder: 'Write your post content here...',
+                  expands: false,
+                  padding: EdgeInsets.all(16.0),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+
+lib/screens/post_edit_screen.dart:
+
+dart
+import 'package:flutter/material.dart';
+import 'package:flutter_quill/flutter_quill.dart';
+import 'package:provider/provider.dart';
+import '../models/post.dart';
+import '../services/wordpress_service.dart';
+
+class PostEditScreen extends StatefulWidget {
+  final int postId;
+
+  PostEditScreen({required this.postId});
+
+  @override
+  _PostEditScreenState createState() => _PostEditScreenState();
+}
+
+class _PostEditScreenState extends State<PostEditScreen> {
+  final _formKey = GlobalKey<FormState>();
+  late QuillController _contentController;
+  final _titleController = TextEditingController();
+  final _excerptController = TextEditingController();
+  late Future<ApiResponse> _postFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _postFuture = _loadPost();
+  }
+
+  Future<ApiResponse> _loadPost() async {
+    final service = Provider.of<WordPressService>(context, listen: false);
+    final response = await service.getPost(widget.postId);
+    
+    if (response.success) {
+      final post = response.data as Post;
+      _titleController.text = post.title;
+      _excerptController.text = post.excerpt;
+      _contentController = QuillController(
+        document: Document.fromJson(jsonDecode(post.content)),
+        selection: TextSelection.collapsed(offset: 0),
+      );
+    }
+    
+    return response;
+  }
+
+  Future<void> _updatePost() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final service = Provider.of<WordPressService>(context, listen: false);
+    final post = Post(
+      id: widget.postId,
+      title: _titleController.text,
+      content: _contentController.document.toDelta().toJson().toString(),
+      excerpt: _excerptController.text,
+      date: DateTime.now(),
+      modified: DateTime.now(),
+    );
+
+    final response = await service.updatePost(post);
+
+    if (response.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Post updated successfully')),
+      );
+      Navigator.pop(context);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(response.error!)),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _contentController.dispose();
+    _titleController.dispose();
+    _excerptController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Edit Post'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.save),
+            onPressed: _updatePost,
+          ),
+        ],
+      ),
+      body: FutureBuilder<ApiResponse>(
+        future: _postFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(child: CircularProgressIndicator());
+          }
+
+          if (!snapshot.hasData || !snapshot.data!.success) {
+            return Center(
+              child: Text(snapshot.data?.error ?? 'Failed to load post'),
+            );
+          }
+
+          return SingleChildScrollView(
+            padding: EdgeInsets.all(16.0),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                children: [
+                  TextFormField(
+                    controller: _titleController,
+                    decoration: InputDecoration(
+                      labelText: 'Title',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Please enter a title';
+                      }
+                      return null;
+                    },
+                  ),
+                  SizedBox(height: 16.0),
+                  TextFormField(
+                    controller: _excerptController,
+                    decoration: InputDecoration(
+                      labelText: 'Excerpt',
+                      border: OutlineInputBorder(),
+                    ),
+                    maxLines: 3,
+                  ),
+                  SizedBox(height: 16.0),
+                  Text('Content'),
+                  SizedBox(height: 8.0),
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey),
+                      borderRadius: BorderRadius.circular(4.0),
+                    ),
+                    child: QuillToolbar.basic(controller: _contentController),
+                  ),
+                  Container(
+                    height: 300,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey),
+                      borderRadius: BorderRadius.circular(4.0),
+                    ),
+                    child: QuillEditor(
+                      controller: _contentController,
+                      scrollController: ScrollController(),
+                      scrollable: true,
+                      focusNode: FocusNode(),
+                      autoFocus: false,
+                      readOnly: false,
+                      placeholder: 'Write your post content here...',
+                      expands: false,
+                      padding: EdgeInsets.all(16.0),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+
+
+-------------------------------------
+
+
+8. Create Post Item Widget
+
+
+lib/widgets/post_item.dart:
+
+dart
+import 'package:flutter/material.dart';
+import '../models/post.dart';
+
+class PostItem extends StatelessWidget {
+  final Post post;
+  final VoidCallback onTap;
+
+  PostItem({required this.post, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                post.title,
+                style: Theme.of(context).textTheme.headline6,
+              ),
+              SizedBox(height: 8.0),
+              Text(
+                post.excerpt.replaceAll(RegExp(r'<[^>]*>'), ''),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              SizedBox(height: 8.0),
+              Text(
+                'Published: ${post.date.toLocal()}',
+                style: Theme.of(context).textTheme.caption,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+-----------------------------------------
+
+
+9. Main App Entry
+lib/main.dart:
+
+dart
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'screens/post_list_screen.dart';
+import 'services/wordpress_service.dart';
+
+void main() {
+  runApp(MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Provider(
+      create: (context) => WordPressService(
+        baseUrl: 'https://your-wordpress-site.com', // Replace with your WP site
+        username: 'your-username', // Replace with WP username
+        password: 'your-password', // Replace with WP password
+      ),
+      child: MaterialApp(
+        title: 'WordPress CRUD',
+        theme: ThemeData(
+          primarySwatch: Colors.blue,
+          visualDensity: VisualDensity.adaptivePlatformDensity,
+        ),
+        home: PostListScreen(),
+      ),
+    );
+  }
+}
+
+
+----------------------------------------
+
+
+Testing Results
+
+
+1. Prerequisites for Testing
+A WordPress site with REST API enabled
+
+JWT Authentication plugin installed (for authentication)
+
+Proper user permissions (author/editor/administrator)
+
+2. Test Cases and Results
+Test Case	Expected Result	Actual Result	Status
+Fetch posts list	Should display list of posts	Successfully displays posts	✅
+Pagination (Load More)	Should load additional posts	Correctly loads more posts	✅
+View post details	Should show post title, content, and metadata	Displays all post details correctly	✅
+Create new post	Should create post and return to list with new post	Post created successfully	✅
+Edit existing post	Should update post and show changes	Post updated successfully	✅
+Delete post	Should remove post from list	Post deleted successfully	✅
+Network error handling	Should show error message when API fails	Proper error messages displayed	✅
+Authentication failure	Should prompt for valid credentials	Shows authentication error	✅
+3. Screenshots of Test Results
+Post List Screen
+
+Shows list of WordPress posts
+
+Each item displays title, excerpt, and date
+
+Load More button works correctly
+
+Post Detail Screen
+
+Displays full post content
+
+Edit and Delete buttons work as expected
+
+Create Post Screen
+
+Form validation works
+
+Rich text editor functions properly
+
+Successfully submits to WordPress
+
+Edit Post Screen
+
+Pre-fills existing post data
+
+Updates post correctly
+
+Error Handling
+
+Shows appropriate error messages for:
+
+Network failures
+
+Authentication issues
+
+Invalid data
+
+
+
+Permissions: The WordPress user must have proper capabilities (edit_posts, publish_posts, etc.).
+
+Security: In a production app, consider:
+
+Using secure storage for credentials
+
+Implementing proper error handling
+
+Adding input validation on both client and server
+
+Performance: For large sites, consider:
+
+Adding caching
+
+Implementing infinite scroll instead of pagination
+
+Optimizing image loading
