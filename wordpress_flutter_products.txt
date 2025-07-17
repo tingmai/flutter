@@ -1,0 +1,500 @@
+Flutter App တွင် WooCommerce မှ Product List များကို ပြသခြင်း
+WooCommerce REST API ကို အသုံးပြု၍ Flutter application တွင် ပစ္စည်းစာရင်းများကို ပြသရန် အဆင့်ဆင့်လမ်းညွှန်:
+
+1. WooCommerce API အတွက် အခြေခံပြင်ဆင်ခြင်း
+WordPress ဘက်တွင်:
+WooCommerce → Settings → Advanced → REST API
+
+"Add Key" ကိုနှိပ်ပါ
+
+Permissions ကို "Read/Write" ရွေးပါ
+
+Consumer Key နှင့် Consumer Secret ကိုမှတ်ထားပါ
+
+2. Flutter Project တွင် Dependency များထည့်ခြင်း
+pubspec.yaml ဖိုင်တွင်:
+
+yaml
+dependencies:
+  http: ^0.13.4
+  cached_network_image: ^3.2.3
+  flutter_staggered_grid_view: ^0.6.2
+3. Product Model Class ဖန်တီးခြင်း
+dart
+class WooProduct {
+  final int id;
+  final String name;
+  final String description;
+  final String price;
+  final String regularPrice;
+  final String salePrice;
+  final String stockStatus;
+  final List<WooImage> images;
+
+  WooProduct({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.price,
+    required this.regularPrice,
+    required this.salePrice,
+    required this.stockStatus,
+    required this.images,
+  });
+
+  factory WooProduct.fromJson(Map<String, dynamic> json) {
+    return WooProduct(
+      id: json['id'],
+      name: json['name'],
+      description: json['description'] ?? '',
+      price: json['price'] ?? '0',
+      regularPrice: json['regular_price'] ?? '0',
+      salePrice: json['sale_price'] ?? '0',
+      stockStatus: json['stock_status'] ?? 'outofstock',
+      images: (json['images'] as List)
+          .map((image) => WooImage.fromJson(image))
+          .toList(),
+    );
+  }
+}
+
+class WooImage {
+  final String src;
+  final String name;
+
+  WooImage({required this.src, required this.name});
+
+  factory WooImage.fromJson(Map<String, dynamic> json) {
+    return WooImage(
+      src: json['src'],
+      name: json['name'] ?? '',
+    );
+  }
+}
+4. API Service Class ဖန်တီးခြင်း
+dart
+class WooCommerceService {
+  final String baseUrl;
+  final String consumerKey;
+  final String consumerSecret;
+
+  WooCommerceService({
+    required this.baseUrl,
+    required this.consumerKey,
+    required this.consumerSecret,
+  });
+
+  Future<List<WooProduct>> getProducts({
+    int perPage = 20,
+    int page = 1,
+    String? category,
+    String? search,
+  }) async {
+    final params = {
+      'per_page': perPage.toString(),
+      'page': page.toString(),
+      if (category != null) 'category': category,
+      if (search != null) 'search': search,
+    };
+
+    final response = await http.get(
+      Uri.parse('$baseUrl/wp-json/wc/v3/products').replace(queryParameters: params),
+      headers: {
+        'Authorization': 'Basic ${base64Encode(utf8.encode('$consumerKey:$consumerSecret'))}',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final List<dynamic> jsonData = jsonDecode(response.body);
+      return jsonData.map((json) => WooProduct.fromJson(json)).toList();
+    } else {
+      throw Exception('Failed to load products');
+    }
+  }
+}
+5. Product List Screen ဖန်တီးခြင်း
+dart
+class ProductListScreen extends StatefulWidget {
+  const ProductListScreen({Key? key}) : super(key: key);
+
+  @override
+  _ProductListScreenState createState() => _ProductListScreenState();
+}
+
+class _ProductListScreenState extends State<ProductListScreen> {
+  final WooCommerceService wooService = WooCommerceService(
+    baseUrl: 'https://your-wordpress-site.com',
+    consumerKey: 'ck_your_consumer_key',
+    consumerSecret: 'cs_your_consumer_secret',
+  );
+
+  List<WooProduct> products = [];
+  bool isLoading = false;
+  int page = 1;
+  final int perPage = 10;
+  bool hasMore = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProducts();
+  }
+
+  Future<void> _loadProducts() async {
+    if (!hasMore || isLoading) return;
+
+    setState(() => isLoading = true);
+
+    try {
+      final newProducts = await wooService.getProducts(
+        perPage: perPage,
+        page: page,
+      );
+
+      setState(() {
+        isLoading = false;
+        products.addAll(newProducts);
+        hasMore = newProducts.length == perPage;
+        page++;
+      });
+    } catch (e) {
+      setState(() => isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: ${e.toString()}')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Our Products'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: () => _showSearchDialog(),
+          ),
+        ],
+      ),
+      body: NotificationListener<ScrollNotification>(
+        onNotification: (notification) {
+          if (notification is ScrollEndNotification &&
+              notification.metrics.extentAfter == 0 &&
+              hasMore) {
+            _loadProducts();
+          }
+          return false;
+        },
+        child: GridView.builder(
+          padding: const EdgeInsets.all(8),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            childAspectRatio: 0.7,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+          ),
+          itemCount: products.length + (hasMore ? 1 : 0),
+          itemBuilder: (context, index) {
+            if (index == products.length) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            return _buildProductItem(products[index]);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProductItem(WooProduct product) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => _navigateToProductDetail(product),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                child: CachedNetworkImage(
+                  imageUrl: product.images.isNotEmpty 
+                      ? product.images.first.src 
+                      : 'https://via.placeholder.com/300',
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+                  errorWidget: (context, url, error) => const Icon(Icons.error),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    product.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Text(
+                        '\$${product.price}',
+                        style: TextStyle(
+                          color: Theme.of(context).primaryColor,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (product.salePrice != '0' && product.salePrice != product.price)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 8.0),
+                          child: Text(
+                            '\$${product.regularPrice}',
+                            style: const TextStyle(
+                              decoration: TextDecoration.lineThrough,
+                              color: Colors.grey,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.circle,
+                        size: 12,
+                        color: product.stockStatus == 'instock'
+                            ? Colors.green
+                            : Colors.red,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        product.stockStatus == 'instock' ? 'In Stock' : 'Out of Stock',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _navigateToProductDetail(WooProduct product) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ProductDetailScreen(product: product),
+      ),
+    );
+  }
+
+  void _showSearchDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        final searchController = TextEditingController();
+        return AlertDialog(
+          title: const Text('Search Products'),
+          content: TextField(
+            controller: searchController,
+            decoration: const InputDecoration(hintText: 'Enter product name'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                setState(() {
+                  products = [];
+                  page = 1;
+                  hasMore = true;
+                });
+                await _loadProducts(search: searchController.text);
+              },
+              child: const Text('Search'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _loadProducts({String? search}) async {
+    setState(() {
+      isLoading = true;
+    });
+
+    try {
+      final newProducts = await wooService.getProducts(
+        perPage: perPage,
+        page: page,
+        search: search,
+      );
+
+      setState(() {
+        isLoading = false;
+        products.addAll(newProducts);
+        hasMore = newProducts.length == perPage;
+        page++;
+      });
+    } catch (e) {
+      setState(() => isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: ${e.toString()}')),
+      );
+    }
+  }
+}
+6. Product Detail Screen (နမူနာ)
+dart
+class ProductDetailScreen extends StatelessWidget {
+  final WooProduct product;
+
+  const ProductDetailScreen({Key? key, required this.product}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(product.name)),
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            SizedBox(
+              height: 300,
+              child: PageView.builder(
+                itemCount: product.images.length,
+                itemBuilder: (context, index) {
+                  return CachedNetworkImage(
+                    imageUrl: product.images[index].src,
+                    fit: BoxFit.cover,
+                    placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+                    errorWidget: (context, url, error) => const Icon(Icons.error),
+                  );
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    product.name,
+                    style: Theme.of(context).textTheme.headline6,
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Text(
+                        '\$${product.price}',
+                        style: TextStyle(
+                          fontSize: 24,
+                          color: Theme.of(context).primaryColor,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (product.salePrice != '0' && product.salePrice != product.price)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 8.0),
+                          child: Text(
+                            '\$${product.regularPrice}',
+                            style: const TextStyle(
+                              decoration: TextDecoration.lineThrough,
+                              color: Colors.grey,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Description',
+                    style: Theme.of(context).textTheme.subtitle1,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(product.description),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.circle,
+                        size: 16,
+                        color: product.stockStatus == 'instock'
+                            ? Colors.green
+                            : Colors.red,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Status: ${product.stockStatus == 'instock' ? 'In Stock' : 'Out of Stock'}',
+                        style: const TextStyle(fontSize: 16),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: product.stockStatus == 'instock'
+                          ? () => _addToCart(context)
+                          : null,
+                      child: const Text('Add to Cart'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _addToCart(BuildContext context) {
+    // Add to cart functionality here
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Product added to cart')),
+    );
+  }
+}
+အရေးကြီးသော အချက်များ:
+API Security:
+
+Consumer Key နှင့် Consumer Secret များကို လုံခြုံစွာသိမ်းဆည်းပါ
+
+Production တွင် .env file သို့မဟုတ် flutter_config package ကိုအသုံးပြုပါ
+
+Performance Optimization:
+
+CachedNetworkImage ကို အသုံးပြုခြင်းဖြင့် image များကို cache လုပ်ပါ
+
+Pagination ကို အသုံးပြုခြင်းဖြင့် data များကို အပိုင်းလိုက်သာလှမ်းယူပါ
+
+Error Handling:
+
+Network error များအတွက် try-catch ကိုအသုံးပြုပါ
+
+User အား သင့်တော်သော error message ပြသပါ
+
+UI/UX:
+
+Loading state နှင့် empty state များအတွက် UI ပြင်ဆင်ထားပါ
+
+Pull-to-refresh လုပ်ဆောင်ချက်ထည့်သွင်းနိုင်ပါသည်
+
+ဤနမူနာကုဒ်များသည် WooCommerce REST API v3 နှင့် အလုပ်လုပ်ပါသည်။ သင့် WooCommerce version အလိုက် အနည်းငယ်ပြင်ဆင်ရန် လိုအပ်နိုင်ပါသည်။
