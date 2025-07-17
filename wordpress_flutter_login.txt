@@ -1,0 +1,248 @@
+Login Process for WordPress WooCommerce with Flutter
+=================================================
+
+
+1. Prerequisites
+WordPress website with WooCommerce installed
+
+Flutter development environment set up
+
+Basic understanding of REST APIs
+
+=================================================
+2. WordPress/WooCommerce Setup
+First, you need to enable the WooCommerce REST API:
+
+In your WordPress admin, go to WooCommerce → Settings → Advanced → REST API
+
+Click "Add Key"
+
+Generate API credentials (Consumer Key and Consumer Secret)
+
+Note these down for later use
+
+
+=================================================
+3. Flutter Implementation
+
+
+A. Add Required Dependencies
+---------------------------------
+
+
+Add these to your pubspec.yaml:
+
+yaml
+dependencies:
+  http: ^0.13.5
+  shared_preferences: ^2.2.2
+  flutter_secure_storage: ^8.0.0
+
+
+----------------------------------
+B. Create an API Service Class
+---------------------------------------------
+dart
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+class WooCommerceService {
+  static const String baseUrl = 'https://your-wordpress-site.com/wp-json/wc/v3';
+  final String consumerKey;
+  final String consumerSecret;
+  final FlutterSecureStorage storage = const FlutterSecureStorage();
+
+  WooCommerceService({required this.consumerKey, required this.consumerSecret});
+
+  Future<Map<String, dynamic>> loginUser(String username, String password) async {
+    // WordPress uses JWT for authentication
+    final response = await http.post(
+      Uri.parse('https://your-wordpress-site.com/wp-json/jwt-auth/v1/token'),
+      body: {
+        'username': username,
+        'password': password,
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      await storage.write(key: 'jwt_token', value: data['token']);
+      return {'success': true, 'token': data['token']};
+    } else {
+      return {'success': false, 'message': 'Invalid credentials'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getCustomerDetails() async {
+    final token = await storage.read(key: 'jwt_token');
+    
+    final response = await http.get(
+      Uri.parse('$baseUrl/customers/me'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Failed to load customer details');
+    }
+  }
+}
+
+
+
+C. Create Login UI
+------------------------------------
+dart
+import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+class LoginPage extends StatefulWidget {
+  const LoginPage({Key? key}) : super(key: key);
+
+  @override
+  _LoginPageState createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  final _formKey = GlobalKey<FormState>();
+  final TextEditingController _usernameController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  bool _isLoading = false;
+  final WooCommerceService wooService = WooCommerceService(
+    consumerKey: 'your_consumer_key',
+    consumerSecret: 'your_consumer_secret',
+  );
+
+  Future<void> _login() async {
+    if (_formKey.currentState!.validate()) {
+      setState(() {
+        _isLoading = true;
+      });
+
+      final response = await wooService.loginUser(
+        _usernameController.text,
+        _passwordController.text,
+      );
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      if (response['success']) {
+        // Navigate to home page
+        Navigator.pushReplacementNamed(context, '/home');
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(response['message'])),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Login')),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              TextFormField(
+                controller: _usernameController,
+                decoration: const InputDecoration(labelText: 'Username'),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter username';
+                  }
+                  return null;
+                },
+              ),
+              TextFormField(
+                controller: _passwordController,
+                decoration: const InputDecoration(labelText: 'Password'),
+                obscureText: true,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter password';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 20),
+              _isLoading
+                  ? const CircularProgressIndicator()
+                  : ElevatedButton(
+                      onPressed: _login,
+                      child: const Text('Login'),
+                    ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+D. Check Authentication State on App Startup
+dart
+import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  final storage = FlutterSecureStorage();
+  final token = await storage.read(key: 'jwt_token');
+  
+  runApp(MyApp(initialRoute: token != null ? '/home' : '/login'));
+}
+
+class MyApp extends StatelessWidget {
+  final String initialRoute;
+
+  const MyApp({Key? key, required this.initialRoute}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      initialRoute: initialRoute,
+      routes: {
+        '/login': (context) => const LoginPage(),
+        '/home': (context) => const HomePage(),
+      },
+    );
+  }
+}
+4. Alternative: Using WordPress REST API with Application Passwords
+If you prefer not to use JWT, you can use WordPress Application Passwords:
+
+Install the "Application Passwords" plugin in WordPress
+
+Generate an application password for the user
+
+Use basic authentication with the username and application password
+
+dart
+Future<Map<String, dynamic>> loginWithAppPassword(String username, String appPassword) async {
+  final String basicAuth = 'Basic ${base64Encode(utf8.encode('$username:$appPassword'))}';
+  
+  final response = await http.get(
+    Uri.parse('https://your-wordpress-site.com/wp-json/wp/v2/users/me'),
+    headers: {
+      'Authorization': basicAuth,
+    },
+  );
+
+  if (response.statusCode == 200) {
+    await storage.write(key: 'basic_auth', value: basicAuth);
+    return {'success': true};
+  } else {
+    return {'success': false, 'message': 'Invalid credentials'};
+  }
+}
