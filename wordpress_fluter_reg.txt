@@ -1,0 +1,279 @@
+ Register Process
+===========================
+WordPress WooCommerce နှင့် Flutter Application အတွက် User Registration Process တစ်ခုကို အောက်ပါအတိုင်း ရေးသားနိုင်ပါသည်။
+
+
+=============================
+1. Register Request Model
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+models->usermodel.dart
+
+dart
+class UserModel {
+  final String userName;
+  final String emailId;
+  final String password;
+  final String confirmPassword;
+
+  UserModel({this.userName,this.emailId,this.password,this.confirmPassword});
+
+  UserModel.fromJson(Map<String,dynamic> json){
+
+     userName=json['username'];
+     emailId=json['email'];
+     password=json['password'];
+
+
+   }
+
+
+
+  RegisterRequestModel({
+    required this.username,
+    required this.emailId,
+    required this.password,
+    required this.confirmpassword,
+
+  });
+
+  // Model ကို JSON format အဖြစ် ပြောင်းလဲရန်
+  Map<String, dynamic> toJson() {
+     final Map<String,dynamic> data=new Map<String,dynamic>();
+
+    data['username']=this.userName;
+    data['email']=this.emailId;
+    data['password']=this.password;
+    
+
+    
+    return data;
+  }
+}
+
+class UserResponseModel{
+
+  int code;
+  String message;
+
+  UserResponseModel({this.code,this.message});
+
+  Map<String,dynamic> fromJson(Map<String,dynamic> json){
+     
+     code=json['code'];
+     message=json['message'];
+
+ }
+
+ Map<String,dynamic> toJson(){
+     final Map<String,dynamic> data=new Map<String,dynamic>();
+
+     data['code']=this.code;
+     data['message']=this.message;
+
+     return data;
+
+
+}
+
+================================
+ရှင်းလင်းချက်:
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+username: အသုံးပြုမည့် username
+
+email: User ၏ email address
+
+password: လျှို့ဝှက်နံပါတ်
+
+firstName နှင့် lastName: User ၏ အမည်
+
+phone: ဖုန်းနံပါတ် (optional)
+
+toJson(): Data ကို WooCommerce API သို့ ပို့ရန် JSON format အဖြစ် ပြောင်းလဲပေးသည်
+
+2. Register Response Model
+dart
+class RegisterResponseModel {
+  final int id;
+  final String email;
+  final String username;
+  final String? jwtToken;
+
+  RegisterResponseModel({
+    required this.id,
+    required this.email,
+    this.jwtToken,
+  });
+
+  // JSON data မှ Model အဖြစ် ပြောင်းလဲရန်
+  factory UserResponseModel.fromJson(Map<String, dynamic> json) {
+    return RegisterResponseModel(
+      id: json['id'],
+      email: json['email'],
+      username: json['username'],
+      jwtToken: json['jwt_token'],
+    );
+  }
+}
+
+
+==================
+ရှင်းလင်းချက်:
+=======================
+
+
+id: User ၏ unique ID
+
+email, username: Register လုပ်ထားသော အချက်အလက်
+
+firstName, lastName: User အမည်
+
+phone: ဖုန်းနံပါတ်
+
+avatarUrl: Profile picture လင့်ခ်
+
+jwtToken: အသုံးပြုရန် token (JWT Authentication အတွက်)
+
+fromJson(): API မှ ပြန်လာသော JSON data ကို Model အဖြစ် ပြောင်းလဲပေးသည်
+
+3. Auth Service နမူနာ
+dart
+class AuthService {
+  final String baseUrl = 'https://your-site.com/wp-json/wc/v3';
+  final String consumerKey = 'your_consumer_key';
+  final String consumerSecret = 'your_consumer_secret';
+
+  Future<UserResponseModel> register(UserRequestModel request) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/customers'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Basic ${base64Encode(utf8.encode('$consumerKey:$consumerSecret'))}',
+      },
+      body: jsonEncode(request.toJson()),
+    );
+
+    if (response.statusCode == 201) {
+      final jsonResponse = jsonDecode(response.body);
+      
+      // JWT token အတွက် အပိုဆောင်း request
+      final tokenResponse = await http.post(
+        Uri.parse('https://your-site.com/wp-json/jwt-auth/v1/token'),
+        body: {
+          'username': request.username,
+          'password': request.password,
+        },
+      );
+
+      if (tokenResponse.statusCode == 200) {
+        jsonResponse['jwt_token'] = jsonDecode(tokenResponse.body)['token'];
+      }
+
+      return RegisterResponseModel.fromJson(jsonResponse);
+    } else {
+      throw Exception('Registration failed: ${response.body}');
+    }
+  }
+}
+ရှင်းလင်းချက်:
+WooCommerce REST API ကို အသုံးပြု၍ customer register လုပ်ခြင်း
+
+အောင်မြင်ပါက JWT token အတွက် နောက်ထပ် request တစ်ခု ပို့ခြင်း
+
+Response နှစ်ခုကို ပေါင်း၍ RegisterResponseModel အဖြစ် ပြန်လည်ပေးပို့ခြင်း
+
+4. UI နမူနာ
+dart
+class RegisterPage extends StatefulWidget {
+  const RegisterPage({Key? key}) : super(key: key);
+
+  @override
+  _RegisterPageState createState() => _RegisterPageState();
+}
+
+class _RegisterPageState extends State<RegisterPage> {
+  final _formKey = GlobalKey<FormState>();
+  final AuthService authService = AuthService();
+  
+  final TextEditingController _usernameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+
+
+  Future<void> _register() async {
+    if (_formKey.currentState!.validate()) {
+      final request = RegisterRequestModel(
+        username: _usernameController.text,
+        email: _emailController.text,
+        password: _passwordController.text,
+      
+      );
+
+      try {
+        final response = await authService.register(request);
+        // Registration success - navigate to home page
+        Navigator.pushReplacementNamed(context, '/home');
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString())),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Register')),
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              children: [
+                TextFormField(
+                  controller: _usernameController,
+                  decoration: const InputDecoration(labelText: 'Username'),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Username ဖြည့်ပါ';
+                    }
+                    return null;
+                  },
+                ),
+                // အခြား form fields တွေကို ထည့်သွင်းနိုင်ပါသည်
+                ElevatedButton(
+                  onPressed: _register,
+                  child: const Text('Register'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+
+မှတ် ရန် -
+WooCommerce API အတွက် Authentication:
+
+Consumer Key နှင့် Consumer Secret လိုအပ်ပါသည်
+
+Basic Auth ကို အသုံးပြုပါသည်
+
+JWT Authentication:
+
+WordPress မှာ JWT Authentication plugin တပ်ဆင်ထားရန် လိုအပ်ပါသည်
+
+Register ပြီးတိုင်း JWT token ကို အလိုအလျောက် ရယူပါသည်
+
+Error Handling:
+
+API request တိုင်းအတွက် try-catch ဖြင့် ဝန်းရံထားပါ
+
+User အား သင့်တော်သော error message ပြသပါ
