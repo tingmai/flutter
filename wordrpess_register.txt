@@ -9,7 +9,7 @@ WooCommerce REST API keys (consumer key and secret)
 
 Flutter development environment
 
-Step 1: Set Up WooCommerce API Permissions
+Set Up WooCommerce API Permissions
 In WordPress admin, go to WooCommerce → Settings → Advanced → REST API
 
 Edit your existing API key or create a new one
@@ -19,7 +19,7 @@ Ensure permissions include "Write customers"
 
 
 
-Step 2: Add Required Dependencies
+ Add Required Dependencies
 Add these to your pubspec.yaml:
 
 yaml
@@ -31,410 +31,759 @@ dependencies:
   provider: ^6.0.5
 
 
+===================================================
 
-==========================
-Step 3: Create Registration Model
 
-----------------------------
-Create registration_model.dart:
 
-dart
-class RegistrationRequest {
-  final String email;
-  final String username;
-  final String password;
-  final String firstName;
-  final String lastName;
+Wordpress and Flutter Register
 
-  RegistrationRequest({
-    required this.email,
-    required this.username,
-    required this.password,
-    required this.firstName,
-    required this.lastName,
+Step 1:
+
+Open Wordpress admin and add api code to the wordpress functions.php
+
+
+
+
+add_action('rest_api_init', 'wp_rest_user_endpoints');
+/**
+ * Register a new user
+ *
+ * @param  WP_REST_Request $request Full details about the request.
+ * @return array $args.
+ **/
+function wp_rest_user_endpoints($request) {
+  /**
+   * Handle Register User request.
+   */
+  register_rest_route('wp/v2', 'users/register', array(
+    'methods' => 'POST',
+    'callback' => 'wc_rest_user_endpoint_handler',
+  ));
+}
+function wc_rest_user_endpoint_handler($request = null) {
+  $response = array();
+  $parameters = $request->get_json_params();
+  $username = sanitize_text_field($parameters['username']);
+  $email = sanitize_text_field($parameters['email']);
+  $password = sanitize_text_field($parameters['password']);
+  // $role = sanitize_text_field($parameters['role']);
+  $error = new WP_Error();
+  if (empty($username)) {
+    $error->add(400, __("Username field 'username' is required.", 'wp-rest-user'), array('status' => 400));
+    return $error;
+  }
+  if (empty($email)) {
+    $error->add(401, __("Email field 'email' is required.", 'wp-rest-user'), array('status' => 400));
+    return $error;
+  }
+  if (empty($password)) {
+    $error->add(404, __("Password field 'password' is required.", 'wp-rest-user'), array('status' => 400));
+    return $error;
+  }
+ 
+  $user_id = username_exists($username);
+  if (!$user_id && email_exists($email) == false) {
+    $user_id = wp_create_user($username, $password, $email);
+    if (!is_wp_error($user_id)) {
+      // Ger User Meta Data (Sensitive, Password included. DO NOT pass to front end.)
+      $user = get_user_by('id', $user_id);
+      // $user->set_role($role);
+      $user->set_role('subscriber');
+      // WooCommerce specific code
+      if (class_exists('WooCommerce')) {
+        $user->set_role('customer');
+      }
+      // Ger User Data (Non-Sensitive, Pass to front end.)
+      $response['code'] = 200;
+      $response['message'] = __("User '" . $username . "' Registration was Successful", "wp-rest-user");
+    } else {
+      return $user_id;
+    }
+  } else {
+    $error->add(406, __("Email/Username already exists, please try 'Reset Password'", 'wp-rest-user'), array('status' => 400));
+    return $error;
+  }
+  return new WP_REST_Response($response, 123);
+}
+
+
+------------------------
+
+
+Step 2:
+
+Test api endpoints using postman 
+
+
+
+-------------------------------
+
+Step 3:
+
+
+Create Model as the following:
+
+
+import 'dart:convert';
+
+UserResponseModel userResponseFromJson(String str) =>
+    UserResponseModel.fromJson(json.decode(str));
+
+class UserModel {
+  String userName;
+  String emailId;
+  String password;
+  String confirmPassword;
+
+  UserModel({
+    this.userName,
+    this.emailId,
+    this.password,
+    this.confirmPassword,
   });
 
-  Map<String, dynamic> toJson() => {
-    'email': email,
-    'username': username,
-    'password': password,
-    'first_name': firstName,
-    'last_name': lastName,
-  };
+  UserModel.fromJson(Map<String, dynamic> json) {
+    userName = json['username'];
+    emailId = json['email'];
+    password = json['password'];
+  }
+
+  Map<String, dynamic> toJson() {
+    final Map<String, dynamic> data = new Map<String, dynamic>();
+    data['username'] = this.userName;
+    data['email'] = this.emailId;
+    data['password'] = this.password;
+    return data;
+  }
 }
 
-class RegistrationResponse {
-  final int? customerId;
-  final String? error;
+class UserResponseModel {
+  int code;
+  String message;
 
-  RegistrationResponse({this.customerId, this.error});
+  UserResponseModel({this.code, this.message});
 
-  factory RegistrationResponse.fromJson(Map<String, dynamic> json) {
-    return RegistrationResponse(
-      customerId: json['id'],
-      error: json['message'],
-    );
+  UserResponseModel.fromJson(Map<String, dynamic> json) {
+    code = json['code'];
+    message = json['message'];
+  }
+
+  Map<String, dynamic> toJson() {
+    final Map<String, dynamic> data = new Map<String, dynamic>();
+    data['code'] = this.code;
+    data['message'] = this.message;
+    return data;
   }
 }
 
 
-==================================
-Step 4: Create Registration Service
+
+=====================================
+
+Step 4:
+
+Create Api Service as the following:
 
 
-Create registration_service.dart:
-
-dart
-import 'package:dio/dio.dart';
-import 'registration_model.dart';
-
-class RegistrationService {
-  final Dio _dio = Dio();
-  final String baseUrl;
-
-  RegistrationService({required this.baseUrl}) {
-    _dio.options.baseUrl = baseUrl;
-    _dio.options.headers['Content-Type'] = 'application/json';
-  }
-
-  Future<RegistrationResponse> register(RegistrationRequest request) async {
-    try {
-      final response = await _dio.post(
-        '/wp-json/wc/v3/customers',
-        data: request.toJson(),
-        queryParameters: {
-          'consumer_key': 'YOUR_CONSUMER_KEY',
-          'consumer_secret': 'YOUR_CONSUMER_SECRET',
-        },
-      );
-
-      return RegistrationResponse(customerId: response.data['id']);
-    } on DioException catch (e) {
-      return RegistrationResponse(
-        error: e.response?.data['message'] ?? 'Registration failed',
-      );
-    }
-  }
-}
 
 
-===================================
+import 'dart:convert';
+import 'package:flutter_wordpress_register/model/user_model.dart';
+import 'package:http/http.dart' as http;
 
+class APIServices {
+  static var client = http.Client();
+  static String apiURL = "http://localhost/wordpress";
 
-Step 5: Create Registration Provider
-Create registration_provider.dart for state management:
+  static Future<UserResponseModel> registerUser(
+    UserModel model,
+  ) async {
+    Map<String, String> requestHeaders = {
+      'Content-type': 'application/json',
+    };
 
-dart
-import 'package:flutter/foundation.dart';
-import 'registration_service.dart';
-import 'registration_model.dart';
-
-class RegistrationProvider with ChangeNotifier {
-  final RegistrationService _service;
-  bool _isLoading = false;
-  String? _error;
-  int? _customerId;
-
-  RegistrationProvider({required RegistrationService service}) : _service = service;
-
-  bool get isLoading => _isLoading;
-  String? get error => _error;
-  int? get customerId => _customerId;
-
-  Future<void> register({
-    required String email,
-    required String username,
-    required String password,
-    required String firstName,
-    required String lastName,
-  }) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-
-    final response = await _service.register(
-      RegistrationRequest(
-        email: email,
-        username: username,
-        password: password,
-        firstName: firstName,
-        lastName: lastName,
-      ),
+    print(model.toJson());
+    var response = await client.post(
+      Uri.parse("$apiURL/wp-json/wp/v2/users/register"),
+      headers: requestHeaders,
+      body: jsonEncode(model.toJson()),
     );
 
-    _isLoading = false;
-
-    if (response.error != null) {
-      _error = response.error;
-    } else {
-      _customerId = response.customerId;
-    }
-
-    notifyListeners();
+    return userResponseFromJson(response.body);
   }
 
-  void clearError() {
-    _error = null;
-    notifyListeners();
-  }
+
+
+   static Future<bool> loginCustomer(String username,String password) async {
+
+	Map<String,String> requestHeaders={
+
+		'Content-type':'application/x-www-form-urlencoded'
+	};
+
+
+	var response = await clicent.post(
+		"$apiURL/wp-json/jwt-auth/v1/token",
+		headers:requestHeaders,
+		body: {
+			"username": username,
+			"password":password,
+			}
+		);
+
+		if(response.statusCode==200){
+
+			var jsonString=response.body;
+			LoginResponseModel responseModel=loginResponseFromJson(jsongString);
+
+			return responseModel.statusCode==200 ? true : false;
+		}
+
+	return false;
+
 }
 
 
 
-========================
-Step 6: Create Registration Screen
 
-=================================
-Create registration_screen.dart:
+   }
+}
 
-dart
+=================
+
+Step 5:
+
+Create Register UI
+
+
+main.dart
+
+
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'registration_provider.dart';
-
-class RegistrationScreen extends StatefulWidget {
-  const RegistrationScreen({Key? key}) : super(key: key);
-
-  @override
-  _RegistrationScreenState createState() => _RegistrationScreenState();
-}
-
-class _RegistrationScreenState extends State<RegistrationScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
-  final _usernameController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _firstNameController = TextEditingController();
-  final _lastNameController = TextEditingController();
-
-  @override
-  Widget build(BuildContext context) {
-    final registrationProvider = Provider.of<RegistrationProvider>(context);
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('Create Account')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: ListView(
-            children: [
-              TextFormField(
-                controller: _emailController,
-                decoration: const InputDecoration(labelText: 'Email'),
-                keyboardType: TextInputType.emailAddress,
-                validator: (value) {
-                  if (value?.isEmpty ?? true) return 'Required field';
-                  if (!value!.contains('@')) return 'Invalid email';
-                  return null;
-                },
-              ),
-              TextFormField(
-                controller: _usernameController,
-                decoration: const InputDecoration(labelText: 'Username'),
-                validator: (value) =>
-                    value?.isEmpty ?? true ? 'Required field' : null,
-              ),
-              TextFormField(
-                controller: _passwordController,
-                decoration: const InputDecoration(labelText: 'Password'),
-                obscureText: true,
-                validator: (value) {
-                  if (value?.isEmpty ?? true) return 'Required field';
-                  if (value!.length < 6) return 'Minimum 6 characters';
-                  return null;
-                },
-              ),
-              TextFormField(
-                controller: _firstNameController,
-                decoration: const InputDecoration(labelText: 'First Name'),
-                validator: (value) =>
-                    value?.isEmpty ?? true ? 'Required field' : null,
-              ),
-              TextFormField(
-                controller: _lastNameController,
-                decoration: const InputDecoration(labelText: 'Last Name'),
-                validator: (value) =>
-                    value?.isEmpty ?? true ? 'Required field' : null,
-              ),
-              const SizedBox(height: 20),
-              if (registrationProvider.isLoading)
-                const Center(child: CircularProgressIndicator())
-              else
-                ElevatedButton(
-                  onPressed: () {
-                    if (_formKey.currentState?.validate() ?? false) {
-                      registrationProvider.register(
-                        email: _emailController.text,
-                        username: _usernameController.text,
-                        password: _passwordController.text,
-                        firstName: _firstNameController.text,
-                        lastName: _lastNameController.text,
-                      ).then((_) {
-                        if (registrationProvider.customerId != null) {
-                          // Registration successful
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Registration successful!'),
-                            ),
-                          );
-                          Navigator.pop(context); // Return to login screen
-                        }
-                      });
-                    }
-                  },
-                  child: const Text('Register'),
-                ),
-              if (registrationProvider.error != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 16.0),
-                  child: Text(
-                    registrationProvider.error!,
-                    style: const TextStyle(color: Colors.red),
-                  ),
-                ),
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Already have an account? Login'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _emailController.dispose();
-    _usernameController.dispose();
-    _passwordController.dispose();
-    _firstNameController.dispose();
-    _lastNameController.dispose();
-    super.dispose();
-  }
-}
-Step 7: Set Up Provider in Main App
-Update your main.dart:
-
-dart
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'registration_provider.dart';
-import 'registration_service.dart';
-import 'registration_screen.dart';
+import 'package:flutter_wordpress_register/register_page.dart';
 
 void main() {
-  runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider(
-          create: (_) => RegistrationProvider(
-            service: RegistrationService(
-              baseUrl: 'https://your-wordpress-site.com',
-            ),
-          ),
-        ),
-      ],
-      child: const MyApp(),
-    ),
-  );
+  runApp(MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({Key? key}) : super(key: key);
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'WooCommerce Registration',
-      theme: ThemeData(primarySwatch: Colors.blue),
-      home: const RegistrationScreen(),
+      title: 'Wordpress Register',
+      debugShowCheckedModeBanner: false,
+      home: UserRegister(),
     );
   }
 }
 
 
-============================
-Step 8: Handle Registration Success
+=============
 
+register_page.dart
 
-After successful registration, you might want to:
+import 'package:flutter/material.dart';
+import 'package:snippet_coder_utils/FormHelper.dart';
+import 'package:snippet_coder_utils/ProgressHUD.dart';
+import 'package:snippet_coder_utils/hex_color.dart';
 
-Automatically log the user in
+import 'model/user_model.dart';
+import 'service/api_service.dart';
 
-Redirect to a welcome screen
+class UserRegister extends StatefulWidget {
+  @override
+  _UserRegisterState createState() => _UserRegisterState();
+}
 
-Send a verification email (requires additional setup in WordPress)
+class _UserRegisterState extends State<UserRegister> {
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+  static final GlobalKey<FormState> globalFormKey = GlobalKey<FormState>();
+  bool isApiCallProcess = false;
+  bool hidePassword = true;
+  bool hideConfirmPassword = true;
 
-Here's how to modify the registration success handler:
+  UserModel userModel;
 
-dart
-if (registrationProvider.customerId != null) {
-  // Option 1: Show success message and return to login
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text('Registration successful! Please login')),
-  );
-  Navigator.pop(context);
-  
-  // Option 2: Auto-login (requires auth provider)
-  // final authProvider = Provider.of<AuthProvider>(context, listen: false);
-  // await authProvider.login(
-  //   _usernameController.text,
-  //   _passwordController.text,
-  // );
-  // if (authProvider.isAuthenticated) {
-  //   Navigator.pushReplacementNamed(context, '/home');
-  // }
+  @override
+  void initState() {
+    super.initState();
+    userModel = new UserModel();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return new SafeArea(
+      child: Scaffold(
+        backgroundColor: Colors.grey[200],
+        key: _scaffoldKey,
+        body: ProgressHUD(
+          child: loginUISetup(),
+          inAsyncCall: isApiCallProcess,
+          opacity: 0.3,
+        ),
+      ),
+    );
+  }
+
+  Widget loginUISetup() {
+    return new SingleChildScrollView(
+      child: new Container(
+        child: new Form(
+          key: globalFormKey,
+          child: _loginUI(context),
+        ),
+      ),
+    );
+  }
+
+  Widget _loginUI(BuildContext context) {
+    return new SingleChildScrollView(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Container(
+            width: MediaQuery.of(context).size.width,
+            height: MediaQuery.of(context).size.height / 3.5,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [HexColor("#3f517e"), HexColor("#182545")],
+              ),
+              borderRadius: BorderRadius.only(
+                // topLeft: Radius.circular(500),
+                //topRight: Radius.circular(150),
+                bottomRight: Radius.circular(150),
+                //bottomLeft: Radius.circular(150),
+              ),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                Spacer(),
+                Align(
+                  alignment: Alignment.center,
+                  child: Image.network(
+                    "logo_png",
+                    fit: BoxFit.contain,
+                    width: 140,
+                  ),
+                ),
+                Spacer(),
+              ],
+            ),
+          ),
+          Center(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: 20, top: 40),
+              child: Text(
+                "User Signup",
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 25),
+              ),
+            ),
+          ),
+          FormHelper.inputFieldWidget(
+            context,
+            Icon(Icons.verified_user),
+            "name",
+            "Username",
+            (onValidateVal) {
+              if (onValidateVal.isEmpty) {
+                return 'Username can\'t be empty.';
+              }
+
+              return null;
+            },
+            (onSavedVal) => {
+              this.userModel.userName = onSavedVal.toString().trim(),
+            },
+            initialValue: "",
+            paddingBottom: 20,
+            onChange: (val) {},
+          ),
+          FormHelper.inputFieldWidget(
+            context,
+            Icon(Icons.email),
+            "name",
+            "Email Id",
+            (onValidateVal) {
+              if (onValidateVal.isEmpty) {
+                return 'Email can\'t be empty.';
+              }
+
+              bool emailValid = RegExp(
+                      r"^[a-zA-Z0-9.a-zA-Z0-9.!#$%&'*+-/=?^_`{|}~]+@[a-zA-Z0-9]+\.[a-zA-Z]+")
+                  .hasMatch(onValidateVal);
+
+              if (!emailValid) {
+                return 'Email Invalid!';
+              }
+
+              return null;
+            },
+            (onSavedVal) => {
+              this.userModel.emailId = onSavedVal.toString().trim(),
+            },
+            initialValue: "",
+            paddingBottom: 20,
+          ),
+          FormHelper.inputFieldWidget(
+            context,
+            Icon(Icons.lock),
+            "password",
+            "Password",
+            (onValidateVal) {
+              if (onValidateVal.isEmpty) {
+                return 'Password can\'t be empty.';
+              }
+
+              return null;
+            },
+            (onSavedVal) => {
+              this.userModel.password = onSavedVal.toString().trim(),
+            },
+            initialValue: "",
+            obscureText: hidePassword,
+            suffixIcon: IconButton(
+              onPressed: () {
+                setState(() {
+                  hidePassword = !hidePassword;
+                });
+              },
+              color: Colors.redAccent.withOpacity(0.4),
+              icon: Icon(
+                hidePassword ? Icons.visibility_off : Icons.visibility,
+              ),
+            ),
+            paddingBottom: 20,
+            onChange: (val) {
+              this.userModel.password = val;
+            },
+          ),
+          Padding(
+            padding: EdgeInsets.only(bottom: 20),
+            child: FormHelper.inputFieldWidget(
+              context,
+              Icon(Icons.lock),
+              "confirmpassword",
+              "Confirm Password",
+              (onValidateVal) {
+                if (onValidateVal.isEmpty) {
+                  return 'Confirm Password can\'t be empty.';
+                }
+
+                if (this.userModel.password != this.userModel.confirmPassword) {
+                  return 'Password Mismatched!';
+                }
+
+                return null;
+              },
+              (onSavedVal) => {
+                this.userModel.confirmPassword = onSavedVal.toString().trim(),
+              },
+              initialValue: "",
+              obscureText: hideConfirmPassword,
+              suffixIcon: IconButton(
+                onPressed: () {
+                  setState(() {
+                    hideConfirmPassword = !hideConfirmPassword;
+                  });
+                },
+                color: Colors.redAccent.withOpacity(0.4),
+                icon: Icon(
+                  hideConfirmPassword ? Icons.visibility_off : Icons.visibility,
+                ),
+              ),
+              onChange: (val) {
+                this.userModel.confirmPassword = val;
+              },
+            ),
+          ),
+          SizedBox(
+            height: 20,
+          ),
+          new Center(
+            child: FormHelper.submitButton(
+              "Register",
+              () {
+                if (validateAndSave()) {
+                  setState(() {
+                    this.isApiCallProcess = true;
+                  });
+
+                  APIServices.registerUser(this.userModel)
+                      .then((UserResponseModel response) {
+                    setState(() {
+                      this.isApiCallProcess = false;
+                    });
+                    if (response.code == 200) {
+                      FormHelper.showSimpleAlertDialog(
+                        context,
+                        "Wordpress Register",
+                        response.message,
+                        "Ok",
+                        () {
+                          Navigator.of(context).pop();
+                        },
+                      );
+                    } else {
+                      FormHelper.showSimpleAlertDialog(
+                        context,
+                        "Wordpress Register",
+                        response.message,
+                        "Ok",
+                        () {
+                          Navigator.of(context).pop();
+                        },
+                      );
+                    }
+                  });
+                }
+              },
+            ),
+          ),
+          SizedBox(
+            height: 20,
+          ),
+        ],
+      ),
+    );
+  }
+
+  bool validateAndSave() {
+    final form = globalFormKey.currentState;
+    if (form.validate()) {
+      form.save();
+      return true;
+    }
+    return false;
+  }
 }
 
 
-Step 9: Test Your Implementation
-Test with valid data
+====================
 
-Test error cases:
+Customer Login
 
-Duplicate email
+Step 1:
 
-Duplicate username
-
-Weak password
-
-Missing fields
-
-Verify customer is created in WooCommerce admin
-
-Additional Features to Consider
-Email Verification:
-
-Install a WordPress plugin like "Email Verification for WooCommerce"
-
-Add verification status to your registration flow
+install JWT AUTH to your wordpress then config JWT AUTH SECRET KEY as the following:
 
 
-Password Strength Meter:
+wp-config.php
 
-dart
-// Add to your password field
-onChanged: (value) {
-  // Update password strength UI
+
+define('JWT_AUTH_SECRET_KEY','jwt-auth-key');
+
+
+
+Step 2:
+
+Login Test using postman api application
+
+
+
+username: user1
+password: aaaaaaaa
+Content-Type:applicaiton/x-www-form-urlencoded
+
+======================================
+
+
+
+models-> login_model.dart
+
+
+LoginResponseModel loginResponseFromJson(String str) =>
+	LoginResponseModel.fromJson(json.decode(str));
+
+
+class LoginResponseModel{
+
+	bool success;
+	int statusCode;
+	String code;
+	String message;
+	Data data;
+
+	LoginResponseModel(
+		{this.success,this.statusCoee,this.code,this.message,this.data});
+
+
+	LoginResponseModel.fromJson(Map<String,dynamic> json){
+		success=json['success'];
+		statusCode=json['statusCode'];
+		code=json['code'];
+		message=json['message'];
+		data=json['data'].length> 0 ? new Data.fromJson(json['data']) : null;
+	}
+
+
+	Map<String,dynamic> toJson(){
+
+		final Map<String,dynamic> data=new Map<String,dynmaci>();
+
+		data['success']=this.success;
+		data['statusCode']=this.statusCode;
+		data['code']=this.code;
+		data['message']=this.message;
+		if(this.data !=null){
+			data['data']=this.data.toJson();
+		}
+
+		return data;
+
+
+	}
+
+}
+
+
+class Data{
+
+	String token;
+	int id;
+	String email;
+	String nicename;
+	String firstName;
+	String lastName;
+	String displayName;
+
+	data({
+		this.token,
+		this.id,
+		this.email,
+		this.nicename,
+		this.firstName,
+		this.lastName,
+		this.displayName
+		});
+
+
+	Data.fromJson(Map<String,dynamic> json){
+
+		token =json['token'];
+		id=json['id'];
+		email=json['email'];
+		nicename=json['nicename'];
+		firstName=json['firstName'];
+		lastName=json['lastName'];
+		displayname=json['displayName'];
+	}
+
+
+	Map<String,dynamic> toJson(){
+
+		final Map<String,dynamic> data=new Map<String,dynamic>();
+
+		data['token']=this.token;
+		data['id']=this.id;
+		data['email']=this.email;
+		data['nicename']=this.nicename;
+		data['firstName']=this.firstName;
+		data['lastName']=this.lastName;
+		data['displayName']=this.displayName;
+
+		return data;
+	}
+
+}
+
+
+=================================
+
+services->api_service.dart
+
+class APIServices{
+
+	static var client = http.Client();
+	static String apiURL = "http://localhost/wordpress";
+
+	static Future<bool> loginCustomer(String username,String password){
+		Map<String,String> requestHeaders={
+			'Content-type' : 'application/x-www-form-urlencoded'
+
+		};
+
+
+	var response=await client.post(
+		"$apiURL/wp-json/jwt-auth/v1/token",
+		headers:requestHeaders,
+		body: {
+
+			"username":username,
+			"password":password,
+
+		  }
+
+		);
+
+
+
+	if(response.statusCode == 200) {
+
+		var jsonString = response.body;
+		LoginResponseModel responseModel = loginReponseFromJson(jsonString);
+		return reponseModel.statusCode == 200 ? true:false;
+
+	}
+
+return false;
+
+
+}
+
+
+==========================
+
+
+login_page.dart
+
+
+
+onPressed:()=>{
+APIServices.loginCustomer(_username,_pwd).then((response){
+	setState((){
+		this.isApiCallProcess=false;
+	});
+
+	if(response){
+
+		globalFormKey.currentState.reset();
+		Navigator.of(context).pushReplacementNamed('/home');
+
+	}else{
+
+		FormHelper.showMessage(context,"Wordpress Loing","invalid username/password","OK",(){
+			Navigator.of(context).pop();
+		});
+
+
+
+	}
+});
+}
+
+
+
+
+=============================
+
+main.dart
+
+
+home: loginPage(,
+routes: <String,WidgeBuilder>{
+
+	'/home':(BuildContext context) => new HomePage(),
+	'/login':(BuildContext context) => new LoginPage(),
+	'/register':(BuildContext context) => new RegisterPage(),
 },
-Terms and Conditions Checkbox:
 
-dart
-bool _acceptedTerms = false;
 
-// Add to your form
-CheckboxListTile(
-  title: Text('I agree to the Terms and Conditions'),
-  value: _acceptedTerms,
-  onChanged: (value) => setState(() => _acceptedTerms = value ?? false),
-),
+===========================
 
-// Add to your validation
-if (!_acceptedTerms) return 'You must accept the terms';
-Social Login Integration:
 
-Use plugins like "Nextend Social Login" on WordPress
 
-Integrate with Flutter packages like flutter_facebook_auth or google_sign_in
+
