@@ -1,0 +1,507 @@
+Flutter ဖြင့် WooCommerce Shopping Cart နှင့် Checkout Process 
+
+WooCommerce API ကို အသုံးပြုပြီး Flutter မှာ Shopping Cart နဲ့ Checkout Process တွေ ဘယ်လိုတည်ဆောက်ရမလဲဆိုတာ ရှင်းပြပေးပါမယ်။
+
+---------------------------------------
+၁။ လိုအပ်တဲ့ Packages တွေ ထည့်ရန်
+pubspec.yaml ဖိုင်ထဲမှာ အောက်ပါ dependencies တွေ ထည့်ပါမယ်။
+----------------------------------
+
+
+yaml
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^0.13.5 # API အတွက်
+  provider: ^6.0.5 # State management အတွက်
+  flutter_secure_storage: ^8.0.0 # လုံခြုံတဲ့ သိမ်းဆည်းမှုအတွက်
+  intl: ^0.18.1 # Date format အတွက်
+  uuid: ^3.0.7 # Unique ID အတွက်
+
+------------------------------------
+၂။ Cart Model နဲ့ API Service
+-----------------------------------
+
+Cart Model Class
+dart
+// models/cart_item.dart
+class CartItem {
+  final String id;
+  final String productId;
+  final String name;
+  final double price;
+  int quantity;
+  final String imageUrl;
+
+  CartItem({
+    required this.productId,
+    required this.name,
+    required this.price,
+    required this.imageUrl,
+    this.quantity = 1,
+  }) : id = const Uuid().v4();
+
+  double get totalPrice => price * quantity;
+}
+Cart Provider (State Management)
+dart
+// providers/cart_provider.dart
+import 'package:flutter/material.dart';
+import '../models/cart_item.dart';
+
+class CartProvider with ChangeNotifier {
+  final List<CartItem> _items = [];
+
+  List<CartItem> get items => [..._items];
+  int get itemCount => _items.length;
+  double get totalAmount => _items.fold(0, (sum, item) => sum + item.totalPrice);
+
+  void addItem(String productId, String name, double price, String imageUrl) {
+    final existingIndex = _items.indexWhere((item) => item.productId == productId);
+    
+    if (existingIndex >= 0) {
+      _items[existingIndex].quantity++;
+    } else {
+      _items.add(CartItem(
+        productId: productId,
+        name: name,
+        price: price,
+        imageUrl: imageUrl,
+      ));
+    }
+    notifyListeners();
+  }
+
+  void removeItem(String productId) {
+    _items.removeWhere((item) => item.productId == productId);
+    notifyListeners();
+  }
+
+  void clearCart() {
+    _items.clear();
+    notifyListeners();
+  }
+}
+
+
+
+---------------------------------
+WooCommerce Service
+----------------------------------
+dart
+// services/woocommerce_service.dart
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+class WooCommerceService {
+  static const String _baseUrl = 'https://your-store.com/wp-json/wc/v3';
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+
+  Future<String?> _getConsumerKey() async {
+    return await _storage.read(key: 'consumer_key');
+  }
+
+  Future<String?> _getConsumerSecret() async {
+    return await _storage.read(key: 'consumer_secret');
+  }
+
+  Future<String?> _getCustomerToken() async {
+    return await _storage.read(key: 'customer_token');
+  }
+
+  Future<Map<String, dynamic>> createOrder(Map<String, dynamic> orderData) async {
+    final token = await _getCustomerToken();
+    final consumerKey = await _getConsumerKey();
+    final consumerSecret = await _getConsumerSecret();
+
+    final response = await http.post(
+      Uri.parse('$_baseUrl/orders'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(orderData),
+    );
+
+    if (response.statusCode == 201) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('အော်ဒါတင်ခြင်း မအောင်မြင်ပါ: ${response.statusCode}');
+    }
+  }
+}
+
+--------------------------
+၃။ Shopping Cart Screen
+-----------------------------
+
+
+dart
+// screens/cart_screen.dart
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/cart_provider.dart';
+
+class CartScreen extends StatelessWidget {
+  const CartScreen({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final cart = Provider.of<CartProvider>(context);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('ဈေးခြင်း'),
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              itemCount: cart.itemCount,
+              itemBuilder: (ctx, i) {
+                final item = cart.items[i];
+                return Dismissible(
+                  key: ValueKey(item.id),
+                  direction: DismissDirection.endToStart,
+                  onDismissed: (direction) {
+                    cart.removeItem(item.productId);
+                  },
+                  background: Container(
+                    color: Colors.red,
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: 20),
+                    child: const Icon(Icons.delete, color: Colors.white),
+                  ),
+                  child: Card(
+                    margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 4),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          child: Padding(
+                            padding: const EdgeInsets.all(5),
+                            child: FittedBox(
+                              child: Text('\$${item.price}'),
+                            ),
+                          ),
+                        ),
+                        title: Text(item.name),
+                        subtitle: Text('စုစုပေါင်း: \$${item.totalPrice.toStringAsFixed(2)}'),
+                        trailing: Text('${item.quantity} x'),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          Card(
+            margin: const EdgeInsets.all(15),
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'စုစုပေါင်း',
+                    style: TextStyle(fontSize: 20),
+                  ),
+                  Chip(
+                    label: Text(
+                      '\$${cart.totalAmount.toStringAsFixed(2)}',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    backgroundColor: Theme.of(context).primaryColor,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          CheckoutButton(cart: cart),
+        ],
+      ),
+    );
+  }
+}
+
+class CheckoutButton extends StatelessWidget {
+  final CartProvider cart;
+
+  const CheckoutButton({Key? key, required this.cart}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          minimumSize: const Size(double.infinity, 50),
+        ),
+        onPressed: cart.itemCount == 0
+            ? null
+            : () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (ctx) => CheckoutScreen(cart: cart),
+                  ),
+                );
+              },
+        child: Text(
+          'ငွေရှင်းမည် (\$${cart.totalAmount.toStringAsFixed(2)})',
+          style: const TextStyle(fontSize: 18),
+        ),
+      ),
+    );
+  }
+}
+
+
+-----------------------
+၄။ Checkout Screen
+--------------------------------
+dart
+// screens/checkout_screen.dart
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/cart_provider.dart';
+import '../services/woocommerce_service.dart';
+
+class CheckoutScreen extends StatefulWidget {
+  final CartProvider cart;
+
+  const CheckoutScreen({Key? key, required this.cart}) : super(key: key);
+
+  @override
+  _CheckoutScreenState createState() => _CheckoutScreenState();
+}
+
+class _CheckoutScreenState extends State<CheckoutScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _addressController = TextEditingController();
+  final _phoneController = TextEditingController();
+  bool _isLoading = false;
+
+  Future<void> _submitOrder() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final orderData = {
+        'payment_method': 'cod',
+        'payment_method_title': 'Cash on Delivery',
+        'status': 'pending',
+        'customer_id': 1, // Replace with actual customer ID
+        'billing': {
+          'first_name': 'Customer',
+          'last_name': 'Name',
+          'email': 'customer@example.com',
+          'phone': _phoneController.text,
+          'address_1': _addressController.text,
+          'city': 'Yangon',
+          'state': 'Yangon',
+          'postcode': '11111',
+          'country': 'MM'
+        },
+        'shipping': {
+          'first_name': 'Customer',
+          'last_name': 'Name',
+          'address_1': _addressController.text,
+          'city': 'Yangon',
+          'state': 'Yangon',
+          'postcode': '11111',
+          'country': 'MM'
+        },
+        'line_items': widget.cart.items.map((item) {
+          return {
+            'product_id': int.parse(item.productId),
+            'quantity': item.quantity,
+            'price': item.price
+          };
+        }).toList(),
+      };
+
+      final response = await WooCommerceService().createOrder(orderData);
+
+      widget.cart.clearCart();
+      
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (ctx) => OrderConfirmationScreen(orderId: response['id']),
+        ),
+      );
+    } catch (error) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('အော်ဒါ မအောင်မြင်ပါ: $error')),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('ငွေရှင်းမည်'),
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Padding(
+              padding: const EdgeInsets.all(16),
+              child: Form(
+                key: _formKey,
+                child: ListView(
+                  children: [
+                    TextFormField(
+                      controller: _addressController,
+                      decoration: const InputDecoration(labelText: 'လိပ်စာ'),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'လိပ်စာထည့်ပါ';
+                        }
+                        return null;
+                      },
+                    ),
+                    TextFormField(
+                      controller: _phoneController,
+                      decoration: const InputDecoration(labelText: 'ဖုန်းနံပါတ်'),
+                      keyboardType: TextInputType.phone,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'ဖုန်းနံပါတ်ထည့်ပါ';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      onPressed: _submitOrder,
+                      child: const Text('အော်ဒါ တင်မည်'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+    );
+  }
+}
+၅။ Order Confirmation Screen
+dart
+// screens/order_confirmation_screen.dart
+import 'package:flutter/material.dart';
+
+class OrderConfirmationScreen extends StatelessWidget {
+  final int orderId;
+
+  const OrderConfirmationScreen({Key? key, required this.orderId}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('အော်ဒါ အချက်အလက်'),
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.check_circle, color: Colors.green, size: 100),
+            const SizedBox(height: 20),
+            const Text(
+              'ကျေးဇူးတင်ပါသည်!',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'သင့်အမှာစာအမှတ်: #$orderId',
+              style: const TextStyle(fontSize: 18),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).popUntil((route) => route.isFirst);
+              },
+              child: const Text('ပင်မစာမျက်နှာသို့ ပြန်သွားမည်'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+-----------------------------------------------
+၆။ လေ့ကျင့်ခန်း ပြုလုပ်ပုံ အဆင့်ဆင့်
+
+----------------------------------------
+
+၁. main.dart မှာ MultiProvider ကို setup လုပ်ပါ
+-----------------------------------
+dart
+void main() {
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => CartProvider()),
+        // အခြား providers တွေ
+      ],
+      child: const MyApp(),
+    ),
+  );
+}
+
+---------------------------
+၂. Product တစ်ခုကို cart ထဲထည့်ဖို့:
+--------------------------------
+dart
+Provider.of<CartProvider>(context, listen: false).addItem(
+  product.id.toString(),
+  product.name,
+  product.price,
+  product.imageUrl,
+);
+
+--------------------------
+၃. Cart ကို ကြည့်ရှုဖို့:
+----------------------------
+dart
+Navigator.push(context, MaterialPageRoute(builder: (_) => const CartScreen()));
+အရေးကြီးသော အချက်များ
+WooCommerce API Setup:
+
+WooCommerce မှာ REST API ကို enable လုပ်ပါ
+
+Consumer Key/Secret တွေကို ရယူပါ
+
+JWT Authentication plugin တပ်ပါ (သို့) Basic Auth သုံးပါ
+
+Security:
+
+Customer data တွေကို သေချာစွာ ကာကွယ်ပါ
+
+HTTPS ကိုသာ အသုံးပြုပါ
+
+Error Handling:
+
+Network error တွေအတွက် ကောင်းမွန်တဲ့ error messages တွေ ပြင်ဆင်ထားပါ
+
+------------------------------
+Testing:
+----------------------------------
+
+မတူညီတဲ့ scenario တွေအတွက် test cases တွေ ရေးပါ
+
+Empty cart, invalid input တွေကို handle လုပ်ပါ
+
+ WooCommerce နဲ့ Flutter ကို အသုံးပြုပြီး shopping cart system တစ်ခု တည်ဆောက်ဖို့ အခြေခံအုတ်မြစ်တွေ ဖြစ်ပါတယ်။ 
+
+
