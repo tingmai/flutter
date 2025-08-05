@@ -1,0 +1,323 @@
+Flutter နဲ့ WooCommerce Order List 
+Northern City
+
+====================================
+
+
+WooCommerce REST API ကနေ ဝယ်ယူသူရဲ့ အမှာစာရင်းတွေကို Flutter မှာ ပြသရမှာ ဖြစ်ပါတယ်။
+
+
+၁။ လိုအပ်တဲ့ Packages တွေ ထည့်ရန်
+----------------------------------
+
+
+pubspec.yaml ဖိုင်ထဲမှာ အောက်ပါ dependencies တွေ ထည့်ပါမယ်။
+
+yaml
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^0.13.5 # API ကို ခေါ်သုံးဖို့
+  provider: ^6.0.5 # State management အတွက်
+  flutter_secure_storage: ^8.0.0 # လုံခြုံတဲ့ သိမ်းဆည်းမှုအတွက်
+  intl: ^0.18.1 # Date format အတွက်
+
+
+---------------------------------------
+၂။ Order Model Class ဖန်တီးခြင်း
+------------------------------------------
+WooCommerce API ကနေ ပြန်လာတဲ့ order data တွေကို Dart object အဖြစ် ပြောင်းဖို့ model class တစ်ခု ဖန်တီးပါမယ်။
+
+dart
+class WooCommerceOrder {
+  final int id;
+  final String number;
+  final DateTime dateCreated;
+  final String status;
+  final double total;
+  final List<OrderItem> lineItems;
+
+  WooCommerceOrder({
+    required this.id,
+    required this.number,
+    required this.dateCreated,
+    required this.status,
+    required this.total,
+    required this.lineItems,
+  });
+
+  factory WooCommerceOrder.fromJson(Map<String, dynamic> json) {
+    return WooCommerceOrder(
+      id: json['id'],
+      number: json['number'],
+      dateCreated: DateTime.parse(json['date_created']),
+      status: json['status'],
+      total: double.parse(json['total']),
+      lineItems: (json['line_items'] as List)
+          .map((item) => OrderItem.fromJson(item))
+          .toList(),
+    );
+  }
+}
+
+class OrderItem {
+  final String name;
+  final int quantity;
+  final double price;
+
+  OrderItem({required this.name, required this.quantity, required this.price});
+
+  factory OrderItem.fromJson(Map<String, dynamic> json) {
+    return OrderItem(
+      name: json['name'],
+      quantity: json['quantity'],
+      price: double.parse(json['price']),
+    );
+  }
+}
+
+
+
+-------------------------------------
+၃။ API Service Class ဖန်တီးခြင်း
+WooCommerce API နဲ့ ဆက်သွယ်ဖို့ service class တစ်ခု ဖန်တီးပါမယ်။
+--------------------------------------------
+dart
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+class WooCommerceService {
+  static const String _baseUrl = 'https://your-store.com/wp-json/wc/v3';
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+
+  Future<List<WooCommerceOrder>> getCustomerOrders(int customerId) async {
+    final consumerKey = await _storage.read(key: 'consumer_key');
+    final consumerSecret = await _storage.read(key: 'consumer_secret');
+
+    final response = await http.get(
+      Uri.parse('$_baseUrl/orders?customer=$customerId'),
+      headers: {
+        'Authorization': 'Basic ${base64Encode(utf8.encode('$consumerKey:$consumerSecret'))}',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final List<dynamic> jsonData = jsonDecode(response.body);
+      return jsonData.map((order) => WooCommerceOrder.fromJson(order)).toList();
+    } else {
+      throw Exception('Order မအောင်မြင်ပါ');
+    }
+  }
+}
+
+
+-------------------------------------------------
+
+၄။ Order List ကို ပြသခြင်း
+
+------------------------------
+အထက်ပါ service ကို အသုံးပြုပြီး order list ကို ပြသမယ့် screen တစ်ခု ဖန်တီးပါမယ်။
+
+dart
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../models/woocommerce_order.dart';
+import '../services/woocommerce_service.dart';
+import '../providers/auth_provider.dart';
+
+class OrdersScreen extends StatefulWidget {
+  const OrdersScreen({Key? key}) : super(key: key);
+
+  @override
+  _OrdersScreenState createState() => _OrdersScreenState();
+}
+
+class _OrdersScreenState extends State<OrdersScreen> {
+  List<WooCommerceOrder> _orders = [];
+  bool _isLoading = false;
+  String _errorMessage = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOrders();
+  }
+
+  Future<void> _loadOrders() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = '';
+    });
+
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      if (authProvider.customerId != null) {
+        final orders = await WooCommerceService()
+            .getCustomerOrders(authProvider.customerId!);
+        setState(() {
+          _orders = orders;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Order Failed...: ${e.toString()}';
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('My Order List'),
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _errorMessage.isNotEmpty
+              ? Center(child: Text(_errorMessage))
+              : _orders.isEmpty
+                  ? const Center(child: Text('No Order yet...'))
+                  : RefreshIndicator(
+                      onRefresh: _loadOrders,
+                      child: ListView.builder(
+                        itemCount: _orders.length,
+                        itemBuilder: (context, index) {
+                          final order = _orders[index];
+                          return OrderCard(order: order);
+                        },
+                      ),
+                    ),
+    );
+  }
+}
+
+class OrderCard extends StatelessWidget {
+  final WooCommerceOrder order;
+
+  const OrderCard({Key? key, required this.order}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.all(8.0),
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'အမှာစာ #${order.number}',
+                  style: Theme.of(context).textTheme.headline6,
+                ),
+                Chip(
+                  label: Text(
+                    _getStatusText(order.status),
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                  backgroundColor: _getStatusColor(order.status),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'ရက်စွဲ: ${DateFormat('yyyy-MM-dd – hh:mm a').format(order.dateCreated)}',
+              style: Theme.of(context).textTheme.caption,
+            ),
+            const SizedBox(height: 12),
+            ...order.lineItems.map((item) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4.0),
+                  child: Row(
+                    children: [
+                      Text('${item.quantity} x '),
+                      Expanded(child: Text(item.name)),
+                      Text('${item.price.toStringAsFixed(2)} ကျပ်'),
+                    ],
+                  ),
+                )),
+            const Divider(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'စုစုပေါင်း',
+                  style: Theme.of(context).textTheme.subtitle1,
+                ),
+                Text(
+                  '${order.total.toStringAsFixed(2)} ကျပ်',
+                  style: Theme.of(context).textTheme.subtitle1?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status) {
+      case 'completed':
+        return Colors.green;
+      case 'processing':
+        return Colors.blue;
+      case 'pending':
+        return Colors.orange;
+      case 'cancelled':
+        return Colors.red;
+      case 'refunded':
+        return Colors.purple;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _getStatusText(String status) {
+    switch (status) {
+      case 'completed':
+        return 'Completed';
+      case 'processing':
+        return 'Processing Now...';
+      case 'pending':
+        return 'Pending Now...';
+      case 'cancelled':
+        return 'Canced...';
+      case 'refunded':
+        return 'refunded';
+      default:
+        return status;
+    }
+  }
+}
+
+--------------------------------
+
+၅။လေ့ကျင့်ခန်း ပြုလုပ်ပုံ အဆင့်ဆင့်
+-----------------------------------
+၁. WooCommerce မှာ REST API ကို enable လုပ်ပါ
+၂. Consumer Key နဲ့ Consumer Secret ကို ရယူပါ
+၃. flutter_secure_storage ကို အသုံးပြုပြီး သိမ်းဆည်းပါ
+၄. User login လုပ်တဲ့အခါ customer ID ကို ရယူပါ
+၅. အထက်ပါ OrdersScreen ကို ခေါ်သုံးပါ
+
+---------------------------------
+Notes:
+
+API endpoint URL ကို မှန်ကန်စွာ ပြင်ဆင်ပါ
+
+SSL certificate ကို အသုံးပြုပါ (HTTPS)
+
+Customer ID နဲ့ order တွေကို ချိတ်ဆက်ဖို့ သေချာပါစေ
+
+Error handling ကို ကောင်းစွာ ပြုလုပ်ပါ
+
+Loading state တွေကို ပြသဖို့ မမေ့ပါနဲ့
