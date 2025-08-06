@@ -22,7 +22,164 @@ dependencies:
   flutter_secure_storage: ^8.0.0 # လုံခြုံတဲ့ သိမ်းဆည်းမှုအတွက်
   intl: ^0.18.1 # Date format အတွက်
 
+ ------------------------------------
+auth_provider.dart 
+---------------------------------
+dart
+// lib/providers/auth_provider.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
+class AuthProvider with ChangeNotifier {
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  int? _customerId;
+  String? _token;
+  bool _isLoading = false;
+  String _errorMessage = '';
+
+  // Getters
+  int? get customerId => _customerId;
+  String? get token => _token;
+  bool get isLoading => _isLoading;
+  String get errorMessage => _errorMessage;
+  bool get isAuth => _token != null;
+
+  // WordPress/WooCommerce login
+  Future<void> login(String username, String password) async {
+    _isLoading = true;
+    _errorMessage = '';
+    notifyListeners();
+
+    try {
+      final response = await http.post(
+        Uri.parse('https://your-wordpress-site.com/wp-json/jwt-auth/v1/token'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'username': username,
+          'password': password,
+        }),
+      );
+
+      final responseData = jsonDecode(response.body);
+      
+      if (response.statusCode == 200) {
+        _token = responseData['token'];
+        _customerId = responseData['user_id'];
+        
+        // Save to secure storage
+        await _storage.write(key: 'token', value: _token);
+        await _storage.write(key: 'customer_id', value: _customerId.toString());
+      } else {
+        _errorMessage = responseData['message'] ?? 'Login failed';
+        throw Exception(_errorMessage);
+      }
+    } catch (error) {
+      _errorMessage = error.toString();
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // Auto login when app starts
+  Future<void> autoLogin() async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final storedToken = await _storage.read(key: 'token');
+      final storedCustomerId = await _storage.read(key: 'customer_id');
+      
+      if (storedToken != null && storedCustomerId != null) {
+        _token = storedToken;
+        _customerId = int.parse(storedCustomerId);
+        
+        // Verify token is still valid
+        final response = await http.get(
+          Uri.parse('https://your-wordpress-site.com/wp-json/wp/v2/users/me'),
+          headers: {'Authorization': 'Bearer $_token'},
+        );
+        
+        if (response.statusCode != 200) {
+          await logout();
+        }
+      }
+    } catch (error) {
+      await logout();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // Logout user
+  Future<void> logout() async {
+    _customerId = null;
+    _token = null;
+    await _storage.delete(key: 'token');
+    await _storage.delete(key: 'customer_id');
+    notifyListeners();
+  }
+
+  // Clear error message
+  void clearError() {
+    _errorMessage = '';
+    notifyListeners();
+  }
+}
+Key Features (မြန်မာလို ရှင်းပြချက်):
+JWT Authentication:
+
+WordPress JWT Auth plugin ကို အသုံးပြုထားပါတယ်
+
+Login လုပ်တဲ့အခါ token နဲ့ customer ID ကို သိမ်းဆည်းပေးပါတယ်
+
+Auto Login:
+
+App ပြန်ဖွင့်တဲ့အခါ အရင်သိမ်းထားတဲ့ token ကို စစ်ဆေးပြီး auto login လုပ်ပေးပါတယ်
+
+Secure Storage:
+
+Token တွေကို FlutterSecureStorage နဲ့ လုံခြုံစွာ သိမ်းဆည်းပေးပါတယ်
+
+Error Handling:
+
+Login မအောင်မြင်ရင် error message တွေကို ပြသပေးပါတယ်
+
+Usage Example (ဘယ်လိုသုံးရမလဲ):
+dart
+// Login လုပ်တဲ့အခါ
+await Provider.of<AuthProvider>(context, listen: false).login(username, password);
+
+// Logout လုပ်တဲ့အခါ
+await Provider.of<AuthProvider>(context, listen: false).logout();
+
+// Auth status စစ်တဲ့အခါ
+bool isAuthenticated = Provider.of<AuthProvider>(context, listen: false).isAuth;
+WordPress Setup (WordPress မှာ ပြင်ဆင်ရန်):
+JWT Authentication Plugin တပ်ပါ
+
+.htaccess ဖိုင်ကို အောက်ပါအတိုင်း ပြင်ပါ:
+
+text
+RewriteEngine on
+RewriteCond %{HTTP:Authorization} ^(.*)
+RewriteRule ^(.*) - [E=HTTP_AUTHORIZATION:%1]
+CORS Support အတွက် functions.php မှာ အောက်ပါ code ထည့်ပါ:
+
+php
+add_filter('rest_authentication_errors', function($result) {
+    if (!empty($result)) {
+        return $result;
+    }
+    if (!is_user_logged_in())) {
+        return new WP_Error('rest_not_logged_in', 'You are not logged in.', array('status' => 401));
+    }
+    return $result;
+});
 ---------------------------------------
 ၂။ Order Model Class ဖန်တီးခြင်း
 ------------------------------------------
