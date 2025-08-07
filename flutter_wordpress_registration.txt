@@ -1,0 +1,557 @@
+Flutter Registration System with WordPress REST API 
+
+==========================================================
+
+1. WordPress REST API Setup (WordPress ဘက်တွင် ပြင်ဆင်ရန်)
+------------------------------------------------
+ပထမဦးစွာ WordPress ဘက်တွင် user registration အတွက် REST API endpoint များကို enable လုပ်ရပါမည်။
+
+
+
+Required WordPress Plugins:
+
+WP REST API (WordPress 5.6+ တွင် built-in ပါပြီးသား)
+
+JWT Authentication for WP REST API
+
+Registration Endpoint:
+
+text
+POST /wp-json/wp/v2/users/register
+--------------------------------
+2. Flutter Registration Model
+--------------------------------------
+dart
+// lib/models/register_model.dart
+class RegisterModel {
+  final String username;
+  final String email;
+  final String password;
+  final String? firstName;
+  final String? lastName;
+
+  RegisterModel({
+    required this.username,
+    required this.email,
+    required this.password,
+    this.firstName,
+    this.lastName,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'username': username,
+      'email': email,
+      'password': password,
+      'first_name': firstName,
+      'last_name': lastName,
+    };
+  }
+}
+
+--------------------------------
+3. Registration Service
+-----------------------------------
+
+
+dart
+// lib/services/registration_service.dart
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../models/register_model.dart';
+
+class RegistrationService {
+  final String baseUrl;
+
+  RegistrationService({required this.baseUrl});
+
+  Future<bool> registerUser(RegisterModel userData) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/wp-json/wp/v2/users/register'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(userData.toJson()),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return true;
+      } else {
+        final errorData = json.decode(response.body);
+        throw Exception(errorData['message'] ?? 'Registration failed');
+      }
+    } catch (e) {
+      throw Exception('Registration error: $e');
+    }
+  }
+}
+
+----------------------------------
+4. Registration Screen
+-------------------------------------
+
+dart
+// lib/screens/register_screen.dart
+import 'package:flutter/material.dart';
+import '../services/registration_service.dart';
+import '../models/register_model.dart';
+import 'login_screen.dart';
+
+class RegisterScreen extends StatefulWidget {
+  const RegisterScreen({Key? key}) : super(key: key);
+
+  @override
+  _RegisterScreenState createState() => _RegisterScreenState();
+}
+
+class _RegisterScreenState extends State<RegisterScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _usernameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
+
+  bool _isLoading = false;
+  String _errorMessage = '';
+
+  Future<void> _register() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = '';
+    });
+
+    try {
+      final registrationService = RegistrationService(
+        baseUrl: 'https://your-wordpress-site.com', // Replace with your site URL
+      );
+
+      final userData = RegisterModel(
+        username: _usernameController.text,
+        email: _emailController.text,
+        password: _passwordController.text,
+        firstName: _firstNameController.text,
+        lastName: _lastNameController.text,
+      );
+
+      final success = await registrationService.registerUser(userData);
+
+      if (success) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => LoginScreen()),
+        );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Registration successful! Please login')),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = e.toString();
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Register')),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
+                TextFormField(
+                  controller: _usernameController,
+                  decoration: InputDecoration(labelText: 'Username'),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter username';
+                    }
+                    return null;
+                  },
+                ),
+                TextFormField(
+                  controller: _emailController,
+                  decoration: InputDecoration(labelText: 'Email'),
+                  keyboardType: TextInputType.emailAddress,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter email';
+                    }
+                    if (!value.contains('@')) {
+                      return 'Please enter valid email';
+                    }
+                    return null;
+                  },
+                ),
+                TextFormField(
+                  controller: _passwordController,
+                  decoration: InputDecoration(labelText: 'Password'),
+                  obscureText: true,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter password';
+                    }
+                    if (value.length < 6) {
+                      return 'Password must be at least 6 characters';
+                    }
+                    return null;
+                  },
+                ),
+                TextFormField(
+                  controller: _firstNameController,
+                  decoration: InputDecoration(labelText: 'First Name (optional)'),
+                ),
+                TextFormField(
+                  controller: _lastNameController,
+                  decoration: InputDecoration(labelText: 'Last Name (optional)'),
+                ),
+                SizedBox(height: 20),
+                if (_errorMessage.isNotEmpty)
+                  Text(
+                    _errorMessage,
+                    style: TextStyle(color: Colors.red),
+                  ),
+                SizedBox(height: 20),
+                ElevatedButton(
+                  onPressed: _isLoading ? null : _register,
+                  child: _isLoading
+                      ? CircularProgressIndicator(color: Colors.white)
+                      : Text('Register'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (context) => LoginScreen()),
+                    );
+                  },
+                  child: Text('Already have an account? Login'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
+    super.dispose();
+  }
+}
+
+------------------------------------------
+5. Login Screen (After Registration)
+--------------------------------------------
+
+
+dart
+// lib/screens/login_screen.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../services/auth_service.dart';
+import 'profile_screen.dart';
+
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({Key? key}) : super(key: key);
+
+  @override
+  _LoginScreenState createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _usernameController = TextEditingController();
+  final _passwordController = TextEditingController();
+
+  bool _isLoading = false;
+  String _errorMessage = '';
+
+  Future<void> _login() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = '';
+    });
+
+    try {
+      final authService = AuthService(
+        baseUrl: 'https://your-wordpress-site.com', // Replace with your site URL
+        storage: FlutterSecureStorage(),
+      );
+
+      final success = await authService.login(
+        _usernameController.text,
+        _passwordController.text,
+      );
+
+      if (success) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => ProfileScreen()),
+        );
+      } else {
+        setState(() {
+          _errorMessage = 'Invalid username or password';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Login failed: $e';
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Login')),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              TextFormField(
+                controller: _usernameController,
+                decoration: InputDecoration(labelText: 'Username or Email'),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter username or email';
+                  }
+                  return null;
+                },
+              ),
+              TextFormField(
+                controller: _passwordController,
+                decoration: InputDecoration(labelText: 'Password'),
+                obscureText: true,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter password';
+                  }
+                  return null;
+                },
+              ),
+              SizedBox(height: 20),
+              if (_errorMessage.isNotEmpty)
+                Text(
+                  _errorMessage,
+                  style: TextStyle(color: Colors.red),
+                ),
+              SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: _isLoading ? null : _login,
+                child: _isLoading
+                    ? CircularProgressIndicator(color: Colors.white)
+                    : Text('Login'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => RegisterScreen()),
+                  );
+                },
+                child: Text('Don\'t have an account? Register'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+}
+
+---------------------------------------
+6. Profile Screen (After Login)
+-------------------------------------------
+
+
+dart
+// lib/screens/profile_screen.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../services/wordpress_user_service.dart';
+
+class ProfileScreen extends StatefulWidget {
+  const ProfileScreen({Key? key}) : super(key: key);
+
+  @override
+  _ProfileScreenState createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  final storage = FlutterSecureStorage();
+  Map<String, dynamic>? userData;
+  bool _isLoading = true;
+  String _errorMessage = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    try {
+      final wpUserService = WordPressUserService(
+        baseUrl: 'https://your-wordpress-site.com', // Replace with your site URL
+        storage: storage,
+      );
+
+      final userId = await wpUserService.getCurrentUserId();
+      final response = await http.get(
+        Uri.parse('$baseUrl/wp-json/wp/v2/users/$userId'),
+        headers: {'Authorization': 'Bearer ${await storage.read(key: 'auth_token')}'},
+      );
+
+      if (response.statusCode == 200) {
+        setState(() {
+          userData = json.decode(response.body);
+          _isLoading = false;
+        });
+      } else {
+        throw Exception('Failed to load user data');
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Error loading profile: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _logout() async {
+    await storage.delete(key: 'auth_token');
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => LoginScreen()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Profile'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.logout),
+            onPressed: _logout,
+          )
+        ],
+      ),
+      body: _isLoading
+          ? Center(child: CircularProgressIndicator())
+          : _errorMessage.isNotEmpty
+              ? Center(child: Text(_errorMessage))
+              : userData == null
+                  ? Center(child: Text('No user data found'))
+                  : Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Username: ${userData!['username']}',
+                              style: TextStyle(fontSize: 18)),
+                          SizedBox(height: 10),
+                          Text('Email: ${userData!['email']}',
+                              style: TextStyle(fontSize: 18)),
+                          SizedBox(height: 10),
+                          Text('Name: ${userData!['name']}',
+                              style: TextStyle(fontSize: 18)),
+                          // Add more user fields as needed
+                        ],
+                      ),
+                    ),
+    );
+  }
+}
+
+--------------------------------------
+ရှင်းလင်းချက်
+-------------------------------------------
+၁. Registration Flow အလုပ်လုပ်ပုံ
+
+User သည် Register Screen တွင် form ဖြည့်ပြီး register လုပ်မည်
+
+Registration အောင်မြင်ပါက Login Screen သို့ပြောင်းမည်
+
+Login အောင်မြင်ပါက Profile Screen သို့ပြောင်းမည်
+
+၂. WordPress REST API Endpoints
+
+Registration: POST /wp-json/wp/v2/users/register
+
+Login: POST /wp-json/jwt-auth/v1/token
+
+User Profile: GET /wp-json/wp/v2/users/me
+
+၃. Flutter Packages အသုံးပြုထားခြင်း
+
+http: API calls များအတွက်
+
+flutter_secure_storage: JWT token သိမ်းဆည်းရန်
+
+၄. Error Handling
+
+Form validation errors
+
+API request errors
+
+Network errors
+
+၅. အရေးကြီးသော အချက်များ
+
+WordPress ဘက်တွင် user registration ဖွင့်ထားရမည် (Settings > General > Membership)
+
+JWT Authentication plugin တပ်ထားရမည်
+
+HTTPS သာသုံးရမည်
+
+API credentials များကို secure storage တွင်သိမ်းရမည်
+
+၆. ဆက်လက်ဖြည့်စွက်နိုင်သော Features
+
+Email verification
+
+Password reset
+
+Profile editing
+
+Social login integration
+
+၇. Navigation Flow
+Register Screen → (success) → Login Screen → (success) → Profile Screen
+
+ဒီ code structure က clean architecture pattern ကိုအခြေခံထားပြီး maintain လုပ်ရလွယ်ကူကာ test လုပ်ရလွယ်ကူပါသည်။
+
+
