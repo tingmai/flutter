@@ -1,0 +1,508 @@
+WooCommerce ထုတ်ကုန်များပြသရန် Flutter Slider နှင့် Grid View
+ဒီ Flutter အပလီကေးရှင်းမှာ WooCommerce ထုတ်ကုန်စာရင်းကို အပိုင်း ၂ ပိုင်းနဲ့ပြသပေးမှာဖြစ်ပါတယ်။
+
+၁။ အဓိကလုပ်ဆောင်ချက်များ
+ထိပ်ဆုံးမှာ Featured ထုတ်ကုန်များကို Slider အဖြစ်ပြသမယ်
+
+Slider အောက်မှာ ထုတ်ကုန်အားလုံးကို Grid View နဲ့ပြသမယ်
+
+နှစ်ခုလုံးကို Scrollbar ထဲမှာထည့်ထားမယ်
+
+-----------------------------------------------
+၂။ လိုအပ်သော Packages များ
+pubspec.yaml ထဲမှာ ဒီ packages တွေထည့်ရမယ်:
+
+yaml
+dependencies:
+  flutter:
+    sdk: flutter
+  carousel_slider: ^4.2.1 # Slider အတွက်
+  woo_commerce: ^3.0.0 # WooCommerce API နဲ့ချိတ်ဆက်ဖို့
+  cached_network_image: ^3.2.3 # ဓာတ်ပုံတွေကို Cache လုပ်ဖို့
+  flutter_staggered_grid_view: ^0.6.2 # Grid View အတွက်
+==================================
+
+
+Model
+
+
+models/WooProduct.dart
+
+
+WooProduct Model
+dart
+// lib/models/woo_product.dart
+class WooProduct {
+  final int? id;
+  final String? name;
+  final String? slug;
+  final String? permalink;
+  final DateTime? dateCreated;
+  final DateTime? dateModified;
+  final String? type;
+  final String? status;
+  final bool? featured;
+  final String? description;
+  final String? shortDescription;
+  final String? sku;
+  final String? price;
+  final String? regularPrice;
+  final String? salePrice;
+  final String? stockStatus;
+  final int? stockQuantity;
+  final List<WooProductImage>? images;
+  final List<WooProductCategory>? categories;
+  final List<WooProductAttribute>? attributes;
+
+  WooProduct({
+    this.id,
+    this.name,
+    this.slug,
+    this.permalink,
+    this.dateCreated,
+    this.dateModified,
+    this.type,
+    this.status,
+    this.featured,
+    this.description,
+    this.shortDescription,
+    this.sku,
+    this.price,
+    this.regularPrice,
+    this.salePrice,
+    this.stockStatus,
+    this.stockQuantity,
+    this.images,
+    this.categories,
+    this.attributes,
+  });
+
+  factory WooProduct.fromJson(Map<String, dynamic> json) {
+    return WooProduct(
+      id: json['id'],
+      name: json['name'],
+      slug: json['slug'],
+      permalink: json['permalink'],
+      dateCreated: json['date_created'] != null 
+          ? DateTime.parse(json['date_created']) 
+          : null,
+      dateModified: json['date_modified'] != null 
+          ? DateTime.parse(json['date_modified']) 
+          : null,
+      type: json['type'],
+      status: json['status'],
+      featured: json['featured'],
+      description: json['description'],
+      shortDescription: json['short_description'],
+      sku: json['sku'],
+      price: json['price'],
+      regularPrice: json['regular_price'],
+      salePrice: json['sale_price'],
+      stockStatus: json['stock_status'],
+      stockQuantity: json['stock_quantity'],
+      images: json['images'] != null 
+          ? List<WooProductImage>.from(
+              json['images'].map((x) => WooProductImage.fromJson(x)))
+          : null,
+      categories: json['categories'] != null
+          ? List<WooProductCategory>.from(
+              json['categories'].map((x) => WooProductCategory.fromJson(x)))
+          : null,
+      attributes: json['attributes'] != null
+          ? List<WooProductAttribute>.from(
+              json['attributes'].map((x) => WooProductAttribute.fromJson(x)))
+          : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'slug': slug,
+      'permalink': permalink,
+      'date_created': dateCreated?.toIso8601String(),
+      'date_modified': dateModified?.toIso8601String(),
+      'type': type,
+      'status': status,
+      'featured': featured,
+      'description': description,
+      'short_description': shortDescription,
+      'sku': sku,
+      'price': price,
+      'regular_price': regularPrice,
+      'sale_price': salePrice,
+      'stock_status': stockStatus,
+      'stock_quantity': stockQuantity,
+      'images': images?.map((x) => x.toJson()).toList(),
+      'categories': categories?.map((x) => x.toJson()).toList(),
+      'attributes': attributes?.map((x) => x.toJson()).toList(),
+    };
+  }
+}
+2. Supporting Models
+dart
+// Product Image Model
+class WooProductImage {
+  final int? id;
+  final String? src;
+  final String? name;
+  final String? alt;
+
+  WooProductImage({this.id, this.src, this.name, this.alt});
+
+  factory WooProductImage.fromJson(Map<String, dynamic> json) {
+    return WooProductImage(
+      id: json['id'],
+      src: json['src'],
+      name: json['name'],
+      alt: json['alt'],
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'src': src,
+      'name': name,
+      'alt': alt,
+    };
+  }
+}
+
+// Product Category Model
+class WooProductCategory {
+  final int? id;
+  final String? name;
+  final String? slug;
+
+  WooProductCategory({this.id, this.name, this.slug});
+
+  factory WooProductCategory.fromJson(Map<String, dynamic> json) {
+    return WooProductCategory(
+      id: json['id'],
+      name: json['name'],
+      slug: json['slug'],
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'slug': slug,
+    };
+  }
+}
+
+// Product Attribute Model
+class WooProductAttribute {
+  final int? id;
+  final String? name;
+  final String? option;
+  final List<String>? options;
+
+  WooProductAttribute({this.id, this.name, this.option, this.options});
+
+  factory WooProductAttribute.fromJson(Map<String, dynamic> json) {
+    return WooProductAttribute(
+      id: json['id'],
+      name: json['name'],
+      option: json['option'],
+      options: json['options'] != null 
+          ? List<String>.from(json['options'])
+          : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'option': option,
+      'options': options,
+    };
+  }
+}
+
+
+
+----------------------------
+၃။ အဓိက Code အပိုင်းများ
+----------------------------------
+
+
+၃.၁ WooCommerce Service
+dart
+class WooCommerceService {
+
+
+  static final WooCommerce wooCommerce = WooCommerce(
+    baseUrl: 'http://localhost/wordpress',
+    consumerKey: 'ck_your_key',
+    consumerSecret: 'cs_your_secret',
+  );
+
+  // Featured ထုတ်ကုန်များရန်
+  static Future<List<WooProduct>> getFeaturedProducts() async {
+    try {
+      return await wooCommerce.getProducts(featured: true, perPage: 5);
+    } catch (e) {
+      print('Featured products မရှာနိုင်: $e');
+      return [];
+    }
+  }
+
+  // ထုတ်ကုန်အားလုံးရန်
+  static Future<List<WooProduct>> getAllProducts() async {
+    try {
+      return await wooCommerce.getProducts(perPage: 20);
+    } catch (e) {
+      print('ထုတ်ကုန်များမရှာနိုင်: $e');
+      return [];
+    }
+  }
+}
+
+
+Code Details:
+
+
+// lib/services/woocommerce_service.dart
+import 'package:woo_commerce/woo_commerce.dart';
+
+class WooCommerceService {
+  static final WooCommerce wooCommerce = WooCommerce(
+    baseUrl: 'https://your-store.com', // Replace with your store URL
+    consumerKey: 'ck_your_consumer_key', // Replace with your consumer key
+    consumerSecret: 'cs_your_consumer_secret', // Replace with your secret
+    isDebug: true, // Set to false in production
+  );
+
+  /// Fetch featured products (products marked as "featured" in WooCommerce)
+  static Future<List<WooProduct>> getFeaturedProducts() async {
+    try {
+      final products = await wooCommerce.getProducts(
+        perPage: 5, // Number of featured products to show
+        featured: true, // Only get featured products
+        status: 'publish', // Only get published products
+        order: 'desc', // Newest first
+        orderBy: 'date',
+      );
+      return products;
+    } catch (e) {
+      print('Error fetching featured products: $e');
+      return [];
+    }
+  }
+
+  /// Fetch all products with pagination support
+  static Future<List<WooProduct>> getAllProducts({
+    int page = 1,
+    int perPage = 20,
+  }) async {
+    try {
+      final products = await wooCommerce.getProducts(
+        perPage: perPage,
+        page: page,
+        status: 'publish', // Only get published products
+        order: 'desc', // Newest first
+        orderBy: 'date',
+      );
+      return products;
+    } catch (e) {
+      print('Error fetching all products: $e');
+      return [];
+    }
+  }
+
+  /// Alternative version with category filtering
+  static Future<List<WooProduct>> getProductsByCategory(int categoryId) async {
+    try {
+      return await wooCommerce.getProducts(
+        perPage: 20,
+        category: categoryId,
+        status: 'publish',
+      );
+    } catch (e) {
+      print('Error fetching products by category: $e');
+      return [];
+    }
+  }
+}
+
+----------------------------------
+
+
+----------------------------------
+၃.၂ Featured Product Slider
+---------------------------------------
+
+dart
+class FeaturedProductSlider extends StatelessWidget {
+  final List<WooProduct> products;
+
+  const FeaturedProductSlider({required this.products});
+
+  @override
+  Widget build(BuildContext context) {
+    return CarouselSlider.builder(
+      itemCount: products.length,
+      itemBuilder: (ctx, index, _) {
+        final product = products[index];
+        return Card(
+          child: Column(
+            children: [
+              CachedNetworkImage(
+                imageUrl: product.images?.first.src ?? '',
+                height: 150,
+                fit: BoxFit.cover,
+              ),
+              Text(product.name ?? ''),
+              Text('\$${product.price}'),
+            ],
+          ),
+        );
+      },
+      options: CarouselOptions(
+        height: 220,
+        autoPlay: true,
+        viewportFraction: 0.8,
+      ),
+    );
+  }
+}
+
+
+--------------------------------------------
+၃.၃ Product Grid View
+------------------------------------------------
+
+
+dart
+class ProductGridView extends StatelessWidget {
+  final List<WooProduct> products;
+
+  const ProductGridView({required this.products});
+
+  @override
+  Widget build(BuildContext context) {
+    return StaggeredGridView.countBuilder(
+      crossAxisCount: 2,
+      itemCount: products.length,
+      itemBuilder: (ctx, index) {
+        final product = products[index];
+        return Card(
+          child: Column(
+            children: [
+              CachedNetworkImage(
+                imageUrl: product.images?.first.src ?? '',
+                height: 120,
+                fit: BoxFit.cover,
+              ),
+              Text(product.name ?? '', maxLines: 2),
+              Text('\$${product.price}'),
+            ],
+          ),
+        );
+      },
+      staggeredTileBuilder: (index) => StaggeredTile.fit(1),
+      mainAxisSpacing: 8,
+      crossAxisSpacing: 8,
+      shrinkWrap: true,
+      physics: NeverScrollableScrollPhysics(),
+    );
+  }
+}
+
+
+
+----------------------------------------
+၃.၄ Main Screen
+-------------------------------------------
+
+
+dart
+class ProductsScreen extends StatefulWidget {
+  const ProductsScreen();
+
+  @override
+  _ProductsScreenState createState() => _ProductsScreenState();
+}
+
+class _ProductsScreenState extends State<ProductsScreen> {
+  List<WooProduct> featuredProducts = [];
+  List<WooProduct> allProducts = [];
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProducts();
+  }
+
+  Future<void> _loadProducts() async {
+    final featured = await WooCommerceService.getFeaturedProducts();
+    final all = await WooCommerceService.getAllProducts();
+    setState(() {
+      featuredProducts = featured;
+      allProducts = all;
+      isLoading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('ထုတ်ကုန်များ')),
+      body: Scrollbar(
+        child: SingleChildScrollView(
+          child: Column(
+            children: [
+              if (isLoading) CircularProgressIndicator(),
+              if (!isLoading) ...[
+                FeaturedProductSlider(products: featuredProducts),
+                SizedBox(height: 16),
+                Padding(
+                  padding: EdgeInsets.all(8),
+                  child: Text('ထုတ်ကုန်အားလုံး', style: TextStyle(fontSize: 18)),
+                ),
+                ProductGridView(products: allProducts),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+
+--------------------------------
+၄။ အလုပ်လုပ်ပုံ
+------------------------------------
+
+
+ပထမဆုံး WooCommerce API ကနေ Featured ထုတ်ကုန်တွေနဲ့ သာမန်ထုတ်ကုန်တွေကို ဆွဲယူမယ်
+
+Featured ထုတ်ကုန်တွေကို Horizontal Slider နဲ့ပြမယ် (ဓာတ်ပုံနဲ့အတူ)
+
+ထုတ်ကုန်အားလုံးကို 2 column Grid View နဲ့ပြမယ်
+
+နှစ်ခုလုံးကို Scrollbar ထဲမှာထည့်ထားတော့ အောက်ဆုံးထိလှိမ့်ကြည့်လို့ရမယ်
+
+ဓာတ်ပုံတွေကို Cache လုပ်ထားတော့ နောက်တစ်ခါပြန်ကြည့်ရင် မြန်မြန်ပေါ်မယ်
+
+-------------------------------------------
+၅။ ပြင်ဆင်နိုင်သည့်အချက်များ
+-----------------------------------------------
+
+
+Slider Design - Card design ကိုပြင်နိုင်တယ်
+
+Grid Column - 2 column အစား 3 column လုပ်နိုင်တယ်
+
+Product Detail - ထုတ်ကုန်ကိုနှိပ်ရင် Detail Page ကိုသွားနိုင်တယ်
+
+Filter/Search - ထုတ်ကုန်တွေကိုစီစစ်ဖို့ Filter ထည့်နိုင်တယ်
