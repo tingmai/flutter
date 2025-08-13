@@ -1,0 +1,1014 @@
+Flutter_ScrollBar_Slider
+------------------------
+
+pubspec.yaml
+--------------
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^0.13.5
+  flutter_staggered_grid_view: ^0.6.2 
+
+-------------------
+
+
+1. Product Model
+First, let's create the product model:
+
+dart
+// lib/models/product.dart
+class Product {
+  final int id;
+  final String name;
+  final String description;
+  final double price;
+  final String regularPrice;
+  final String salePrice;
+  final List<String> images;
+  final String category;
+  final bool isFeatured;
+  final double averageRating;
+  final int ratingCount;
+
+  Product({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.price,
+    required this.regularPrice,
+    required this.salePrice,
+    required this.images,
+    required this.category,
+    required this.isFeatured,
+    required this.averageRating,
+    required this.ratingCount,
+  });
+
+  factory Product.fromJson(Map<String, dynamic> json) {
+    // Parse images
+    List<String> images = [];
+    if (json['images'] != null) {
+      for (var image in json['images']) {
+        images.add(image['src']);
+      }
+    }
+
+    // Parse categories
+    String category = '';
+    if (json['categories'] != null && json['categories'].isNotEmpty) {
+      category = json['categories'][0]['name'];
+    }
+
+    return Product(
+      id: json['id'] ?? 0,
+      name: json['name'] ?? 'No Name',
+      description: json['description'] ?? '',
+      price: double.tryParse(json['price']?.toString() ?? '0') ?? 0,
+      regularPrice: json['regular_price']?.toString() ?? '0',
+      salePrice: json['sale_price']?.toString() ?? '0',
+      images: images,
+      category: category,
+      isFeatured: json['featured'] ?? false,
+      averageRating: double.tryParse(json['average_rating']?.toString() ?? '0') ?? 0,
+      ratingCount: json['rating_count'] ?? 0,
+    );
+  }
+}
+2. Category Model
+dart
+// lib/models/category.dart
+class ProductCategory {
+  final int id;
+  final String name;
+  final String image;
+  final int count;
+
+  ProductCategory({
+    required this.id,
+    required this.name,
+    required this.image,
+    required this.count,
+  });
+
+  factory ProductCategory.fromJson(Map<String, dynamic> json) {
+    String image = '';
+    if (json['image'] != null) {
+      image = json['image']['src'] ?? '';
+    }
+
+    return ProductCategory(
+      id: json['id'] ?? 0,
+      name: json['name'] ?? 'No Name',
+      image: image,
+      count: json['count'] ?? 0,
+    );
+  }
+}
+3. API Service
+dart
+// lib/services/woocommerce_service.dart
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../models/product.dart';
+import '../models/category.dart';
+
+class WooCommerceService {
+  final String baseUrl;
+  final String consumerKey;
+  final String consumerSecret;
+
+  WooCommerceService({
+    required this.baseUrl,
+    required this.consumerKey,
+    required this.consumerSecret,
+  });
+
+  Future<List<Product>> fetchProducts({int perPage = 20, int page = 1}) async {
+    final response = await http.get(
+      Uri.parse(
+        '$baseUrl/wp-json/wc/v3/products?per_page=$perPage&page=$page&consumer_key=$consumerKey&consumer_secret=$consumerSecret',
+      ),
+    );
+
+    if (response.statusCode == 200) {
+      List<dynamic> data = json.decode(response.body);
+      return data.map((json) => Product.fromJson(json)).toList();
+    } else {
+      throw Exception('Failed to load products');
+    }
+  }
+
+  Future<List<Product>> fetchFeaturedProducts({int perPage = 10}) async {
+    final response = await http.get(
+      Uri.parse(
+        '$baseUrl/wp-json/wc/v3/products?featured=true&per_page=$perPage&consumer_key=$consumerKey&consumer_secret=$consumerSecret',
+      ),
+    );
+
+    if (response.statusCode == 200) {
+      List<dynamic> data = json.decode(response.body);
+      return data.map((json) => Product.fromJson(json)).toList();
+    } else {
+      throw Exception('Failed to load featured products');
+    }
+  }
+
+  Future<List<ProductCategory>> fetchCategories({int perPage = 10}) async {
+    final response = await http.get(
+      Uri.parse(
+        '$baseUrl/wp-json/wc/v3/products/categories?per_page=$perPage&consumer_key=$consumerKey&consumer_secret=$consumerSecret',
+      ),
+    );
+
+    if (response.statusCode == 200) {
+      List<dynamic> data = json.decode(response.body);
+      return data.map((json) => ProductCategory.fromJson(json)).toList();
+    } else {
+      throw Exception('Failed to load categories');
+    }
+  }
+}
+4. Main App with Scrollbar and Layout
+dart
+// lib/main.dart
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'models/product.dart';
+import 'models/category.dart';
+import 'services/woocommerce_service.dart';
+
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp])
+      .then((_) {
+    runApp(MyApp());
+  });
+}
+
+class MyApp extends StatelessWidget {
+  final WooCommerceService wooService = WooCommerceService(
+    baseUrl: 'https://your-woocommerce-site.com', // Replace with your site URL
+    consumerKey: 'ck_your_consumer_key', // Replace with your consumer key
+    consumerSecret: 'cs_your_consumer_secret', // Replace with your consumer secret
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'WooCommerce Store',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
+      ),
+      home: HomePage(wooService: wooService),
+      debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
+class HomePage extends StatefulWidget {
+  final WooCommerceService wooService;
+
+  const HomePage({Key? key, required this.wooService}) : super(key: key);
+
+  @override
+  _HomePageState createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+
+
+  late Future<List<Product>> featuredProducts;
+  late Future<List<ProductCategory>> categories;
+  late Future<List<Product>> allProducts;
+
+  @override
+  void initState() {
+    super.initState();
+    // API ကနေ data တွေ ယူထားခြင်း
+    featuredProducts = widget.wooService.fetchFeaturedProducts();
+    categories = widget.wooService.fetchCategories();
+    allProducts = widget.wooService.fetchProducts();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('WooCommerce Store'),
+        centerTitle: true,
+      ),
+      body: Scrollbar(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Featured Products Section
+                _buildSectionTitle('Featured Products'),
+                SizedBox(
+                  height: 220,
+                  child: FutureBuilder<List<Product>>(
+                    future: featuredProducts,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      } else if (snapshot.hasError) {
+                        return Center(child: Text('Error: ${snapshot.error}'));
+                      } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                        return const Center(child: Text('No featured products found'));
+                      } else {
+                        return _buildFeaturedSlider(snapshot.data!);
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Categories Section
+                _buildSectionTitle('Categories'),
+                SizedBox(
+                  height: 100,
+                  child: FutureBuilder<List<ProductCategory>>(
+                    future: categories,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      } else if (snapshot.hasError) {
+                        return Center(child: Text('Error: ${snapshot.error}'));
+                      } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                        return const Center(child: Text('No categories found'));
+                      } else {
+                        return _buildCategorySlider(snapshot.data!);
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // All Products Section
+                _buildSectionTitle('All Products'),
+                FutureBuilder<List<Product>>(
+                  future: allProducts,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    } else if (snapshot.hasError) {
+                      return Center(child: Text('Error: ${snapshot.error}'));
+                    } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                      return const Center(child: Text('No products found'));
+                    } else {
+                      return _buildProductGrid(snapshot.data!);
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+ // Featured Products Slider ဖန်တီးခြင်း
+  Widget _buildFeaturedSlider(List<Product> products) {
+    return ListView.builder(
+      scrollDirection: Axis.horizontal,
+      itemCount: products.length,
+      itemBuilder: (context, index) {
+        final product = products[index];
+        return Container(
+          width: 160,
+          margin: const EdgeInsets.only(right: 10),
+          child: Card(
+            elevation: 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+                  child: Image.network(
+                    product.images.isNotEmpty ? product.images[0] : 'https://via.placeholder.com/150',
+                    height: 120,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        height: 120,
+                        color: Colors.grey[200],
+                        child: const Icon(Icons.broken_image),
+                      );
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        product.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '\$${product.price.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          color: Theme.of(context).primaryColor,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // Product Category Slider ဖန်တီးခြင်း
+  Widget _buildCategorySlider(List<ProductCategory> categories) {
+    return ListView.builder(
+      scrollDirection: Axis.horizontal,
+      itemCount: categories.length,
+      itemBuilder: (context, index) {
+        final category = categories[index];
+        return Container(
+          width: 100,
+          margin: const EdgeInsets.only(right: 10),
+          child: Card(
+            elevation: 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircleAvatar(
+                  radius: 30,
+                  backgroundImage: NetworkImage(
+                    category.image.isNotEmpty ? category.image : 'https://via.placeholder.com/150',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  category.name,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+
+  // Product Grid ဖန်တီးခြင်း
+  Widget _buildProductGrid(List<Product> products) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        childAspectRatio: 0.7,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+      ),
+      itemCount: products.length,
+      itemBuilder: (context, index) {
+        final product = products[index];
+        return Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+                child: Image.network(
+                  product.images.isNotEmpty ? product.images[0] : 'https://via.placeholder.com/150',
+                  height: 120,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      height: 120,
+                      color: Colors.grey[200],
+                      child: const Icon(Icons.broken_image),
+                    );
+                  },
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      product.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(Icons.star, color: Colors.amber, size: 16),
+                        Text(
+                          product.averageRating.toStringAsFixed(1),
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '(${product.ratingCount})',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '\$${product.price.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        color: Theme.of(context).primaryColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+--------------
+
+မှတ်ရန်-
+
+
+API Credentials အစားထိုးရန် - baseUrl, consumerKey, consumerSecret တွေကို သင့် WooCommerce API နဲ့ အစားထိုးပါ
+
+Error Handling - Network request တွေ၊ image loading တွေမှာ error handling လုပ်ထားပါတယ်
+
+Loading States - Data တွေ မရသေးတဲ့အချိန် loading indicator တွေ ပြထားပါတယ်
+
+အဓိက အစိတ်အပိုင်း ၃ခု
+
+Featured products (အလျားလိုက် slider)
+
+Categories (အလျားလိုက် slider)
+
+All products (အကွက်ချထားသော grid view)
+
+Scrollbar - တစ်ချောင်းတည်း scroll လုပ်လို့ရအောင် Scrollbar နဲ့ SingleChildScrollView ကို အသုံးပြုထားပါတယ်
+
+----------------------------
+
+ဘယ်လို အလုပ်လုပ်သလဲ 
+InitState တွင် API ၃ခုကို တစ်ပြိုင်နက် ခေါ်ယူထားပါတယ်:
+
+Featured products 
+
+All categories
+
+All products
+
+FutureBuilder များကို အသုံးပြုပြီး data များ ရောက်ရှိလာသည်အထိ loading state ကို ပြသထားပါတယ်။
+
+ပစ္စည်းများကို ပြသပုံ:
+-----------------
+Featured products: Horizontal ListView with Cards
+
+Categories: Horizontal ListView with Chips
+
+All products: GridView with 2 columns
+
+အမှားများကို ကိုင်တွယ်ခြင်း - Network error ဖြစ်ပါက error message ပြသထားပါတယ်။
+
+ဒီ code ကို ဆက်ပြီး product details page တွေ၊ search functionality တွေ၊ cart system တွေ ထပ်ထည့်ပြီး ပိုပြည့်စုံအောင် လုပ်နိုင်ပါတယ်။
+
+
+------------------
+
+
+Flutter App with FakeStoreAPI (Burmese Explanation)
+ဒီ Flutter app မှာ FakeStoreAPI (https://fakestoreapi.com) ကို အသုံးပြုပြီး Scrollbar အတွင်းမှာ Featured Product Slider, Category Slider နဲ့ Product Grid View တွေကို အပေါ်ကနေ အောက်ကို အစဉ်လိုက် ဖော်ပြထားပါတယ်။
+
+1. Product Model (ပစ္စည်းမော်ဒယ်)
+dart
+// lib/models/product_model.dart
+class Product {
+  final int id; // ပစ္စည်း ID
+  final String title; // ပစ္စည်းအမည်
+  final double price; // ဈေးနှုန်း
+  final String description; // ရှင်းလင်းချက်
+  final String category; // အမျိုးအစား
+  final String image; // ပစ္စည်းပုံ
+  final Rating rating; // Rating အချက်အလက်
+
+  Product({
+    required this.id,
+    required this.title,
+    required this.price,
+    required this.description,
+    required this.category,
+    required this.image,
+    required this.rating,
+  });
+
+  factory Product.fromJson(Map<String, dynamic> json) {
+    return Product(
+      id: json['id'],
+      title: json['title'],
+      price: json['price'].toDouble(),
+      description: json['description'],
+      category: json['category'],
+      image: json['image'],
+      rating: Rating.fromJson(json['rating']),
+    );
+  }
+}
+
+class Rating {
+  final double rate; // ပျမ်းမျှ rating
+  final int count; // rating အရေအတွက်
+
+  Rating({required this.rate, required this.count});
+
+  factory Rating.fromJson(Map<String, dynamic> json) {
+    return Rating(
+      rate: json['rate'].toDouble(),
+      count: json['count'],
+    );
+  }
+}
+
+
+
+2. API Service (ဝန်ဆောင်မှု)
+dart
+// lib/services/api_service.dart
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../models/product_model.dart';
+
+class ApiService {
+  static const String _baseUrl = 'https://fakestoreapi.com';
+
+  // ပစ္စည်းအားလုံးကို ယူတဲ့ method
+  Future<List<Product>> fetchAllProducts() async {
+    final response = await http.get(Uri.parse('$_baseUrl/products'));
+    if (response.statusCode == 200) {
+      List<dynamic> data = json.decode(response.body);
+      return data.map((json) => Product.fromJson(json)).toList();
+    } else {
+      throw Exception('Failed to load products');
+    }
+  }
+
+  // Featured (အထူးပစ္စည်း) များကို ယူတဲ့ method
+  Future<List<Product>> fetchFeaturedProducts() async {
+    // FakeStoreAPI တွင် featured filter မရှိသောကြောင့် limit 5 ဖြင့် ယူထားသည်
+    final response = await http.get(Uri.parse('$_baseUrl/products?limit=5'));
+    if (response.statusCode == 200) {
+      List<dynamic> data = json.decode(response.body);
+      return data.map((json) => Product.fromJson(json)).toList();
+    } else {
+      throw Exception('Failed to load featured products');
+    }
+  }
+
+  // အမျိုးအစားအားလုံးကို ယူတဲ့ method
+  Future<List<String>> fetchAllCategories() async {
+    final response = await http.get(Uri.parse('$_baseUrl/products/categories'));
+    if (response.statusCode == 200) {
+      List<dynamic> data = json.decode(response.body);
+      return data.map((category) => category.toString()).toList();
+    } else {
+      throw Exception('Failed to load categories');
+    }
+  }
+}
+3. Main App (အဓိက App)
+dart
+// lib/main.dart
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'models/product_model.dart';
+import 'services/api_service.dart';
+
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp])
+      .then((_) {
+    runApp(MyApp());
+  });
+}
+
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'FakeStore App',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
+      ),
+      home: HomePage(),
+      debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
+class HomePage extends StatefulWidget {
+  @override
+  _HomePageState createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  final ApiService _apiService = ApiService();
+  late Future<List<Product>> _featuredProducts;
+  late Future<List<String>> _categories;
+  late Future<List<Product>> _allProducts;
+
+  @override
+  void initState() {
+    super.initState();
+    _featuredProducts = _apiService.fetchFeaturedProducts();
+    _categories = _apiService.fetchAllCategories();
+    _allProducts = _apiService.fetchAllProducts();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('FakeStore App'),
+        centerTitle: true,
+      ),
+      body: Scrollbar(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Featured Products Section
+                _buildSectionTitle('Featured Products'),
+                SizedBox(
+                  height: 250,
+                  child: FutureBuilder<List<Product>>(
+                    future: _featuredProducts,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return _buildLoadingIndicator();
+                      } else if (snapshot.hasError) {
+                        return _buildErrorWidget(snapshot.error.toString());
+                      } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                        return _buildEmptyWidget('No featured products found');
+                      } else {
+                        return _buildFeaturedSlider(snapshot.data!);
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Categories Section
+                _buildSectionTitle('Categories'),
+                SizedBox(
+                  height: 80,
+                  child: FutureBuilder<List<String>>(
+                    future: _categories,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return _buildLoadingIndicator();
+                      } else if (snapshot.hasError) {
+                        return _buildErrorWidget(snapshot.error.toString());
+                      } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                        return _buildEmptyWidget('No categories found');
+                      } else {
+                        return _buildCategorySlider(snapshot.data!);
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // All Products Section
+                _buildSectionTitle('All Products'),
+                FutureBuilder<List<Product>>(
+                  future: _allProducts,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return _buildLoadingIndicator();
+                    } else if (snapshot.hasError) {
+                      return _buildErrorWidget(snapshot.error.toString());
+                    } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                      return _buildEmptyWidget('No products found');
+                    } else {
+                      return _buildProductGrid(snapshot.data!);
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFeaturedSlider(List<Product> products) {
+    return ListView.builder(
+      scrollDirection: Axis.horizontal,
+      itemCount: products.length,
+      itemBuilder: (context, index) {
+        final product = products[index];
+        return Container(
+          width: 180,
+          margin: const EdgeInsets.only(right: 12),
+          child: Card(
+            elevation: 3,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                  child: Image.network(
+                    product.image,
+                    height: 150,
+                    width: double.infinity,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        height: 150,
+                        color: Colors.grey[200],
+                        child: const Icon(Icons.broken_image, size: 50),
+                      );
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        product.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '\$${product.price.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          color: Theme.of(context).primaryColor,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(Icons.star, color: Colors.amber, size: 16),
+                          Text(' ${product.rating.rate.toStringAsFixed(1)}'),
+                          Text(' (${product.rating.count})', style: TextStyle(color: Colors.grey)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCategorySlider(List<String> categories) {
+    return ListView.builder(
+      scrollDirection: Axis.horizontal,
+      itemCount: categories.length,
+      itemBuilder: (context, index) {
+        final category = categories[index];
+        return Container(
+          margin: const EdgeInsets.only(right: 8),
+          child: Chip(
+            label: Text(category),
+            backgroundColor: Colors.blue[100],
+            labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildProductGrid(List<Product> products) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        childAspectRatio: 0.75,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+      ),
+      itemCount: products.length,
+      itemBuilder: (context, index) {
+        final product = products[index];
+        return Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Image.network(
+                    product.image,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Center(child: Icon(Icons.broken_image, size: 40));
+                    },
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      product.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '\$${product.price.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        color: Theme.of(context).primaryColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildLoadingIndicator() {
+    return const Center(child: CircularProgressIndicator());
+  }
+
+  Widget _buildErrorWidget(String error) {
+    return Center(child: Text('Error: $error'));
+  }
+
+  Widget _buildEmptyWidget(String message) {
+    return Center(child: Text(message));
+  }
+}
+အရေးကြီးသော အချက်များ (Key Points in Burmese)
+FakeStoreAPI အသုံးပြုခြင်း - ဒီ app မှာ https://fakestoreapi.com ကို အသုံးပြုထားပါတယ်။ ဒီ API က free ဖြစ်ပြီး test လုပ်ဖို့ အဆင်ပြေပါတယ်။
+
+အဓိက အစိတ်အပိုင်း ၃ခု:
+
+Featured Products Slider (အလျားလိုက် ရွေ့လျားနိုင်သော ပစ္စည်းများ)
+
+Categories Slider (အမျိုးအစားများ)
+
+All Products Grid (ပစ္စည်းအားလုံးကို အကွက်ချပြသခြင်း)
+
+Scrollbar - တစ်ချောင်းတည်း scroll လုပ်လို့ရအောင် Scrollbar နဲ့ SingleChildScrollView ကို အသုံးပြုထားပါတယ်။
+
+Error Handling - Network request တွေ၊ image loading တွေမှာ error handling လုပ်ထားပါတယ်။
+
+Loading States - Data တွေ မရသေးတဲ့အချိန် loading indicator တွေ ပြထားပါတယ်။
+
+အသုံးပြုထားသော Packages:
+
+http: API calls အတွက်
+
+flutter_staggered_grid_view: Grid view လှပစေရန် (optional)
+
+ဘယ်လို အလုပ်လုပ်သလဲ (How It Works)
+InitState တွင် API ၃ခုကို တစ်ပြိုင်နက် ခေါ်ယူထားပါတယ်:
+
+Featured products (limit 5)
+
+All categories
+
+All products
+
+FutureBuilder များကို အသုံးပြုပြီး data များ ရောက်ရှိလာသည်အထိ loading state ကို ပြသထားပါတယ်။
+
+ပစ္စည်းများကို ပြသပုံ:
+
+Featured products: Horizontal ListView with Cards
+
+Categories: Horizontal ListView with Chips
+
+All products: GridView with 2 columns
+
+အမှားများကို ကိုင်တွယ်ခြင်း - Network error ဖြစ်ပါက error message ပြသထားပါတယ်။
+
+ဒီ code ကို ဆက်ပြီး product details page တွေ၊ search functionality တွေ၊ cart system တွေ ထပ်ထည့်ပြီး ပိုပြည့်စုံအောင် လုပ်နိုင်ပါတယ်။
