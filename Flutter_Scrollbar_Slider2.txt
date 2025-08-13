@@ -12,6 +12,362 @@ dependencies:
 -------------------
 
 
+// lib/main.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_application_1/models/product.dart';
+import 'package:flutter_application_1/services/api_service.dart';
+import 'package:provider/provider.dart';
+
+class HomePage extends StatefulWidget {
+  const HomePage({super.key});
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  int _currentPage = 1;
+  final List<Product> _allProducts = [];
+  bool _isLoading = false;
+  bool _hasMore = true;
+
+  late final PageController _featuredController;
+  late final PageController _categoryController;
+
+  @override
+  void initState() {
+    super.initState();
+    _featuredController = PageController();
+    _categoryController = PageController();
+    _startAutoSlide();
+    _loadMoreProducts();
+  }
+
+  void _startAutoSlide() {
+    // Featured products auto-slide (every 3 seconds)
+    Future.delayed(const Duration(seconds: 3), () {
+      if (_featuredController.hasClients && mounted) {
+        final nextPage = (_featuredController.page?.toInt() ?? 0) + 1;
+        final itemCount = 5; // We fetched 5 featured products
+        _featuredController.animateToPage(
+          nextPage >= itemCount ? 0 : nextPage,
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOut,
+        );
+        _startAutoSlide();
+      }
+    });
+
+    // Categories auto-slide (every 5 seconds)
+   
+    Future.delayed(const Duration(seconds: 5), () {
+      if (_categoryController.hasClients) {
+        final nextPage = (_categoryController.page!.toInt() + 1) % 4;
+        _categoryController.animateToPage(
+          nextPage,
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOut,
+        );
+        _startAutoSlide();
+      }
+    });
+  }
+
+  Future<void> _loadMoreProducts() async {
+    if (_isLoading || !_hasMore) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final newProducts = await context.read<ApiService>().getProducts(
+        _currentPage,
+      );
+      setState(() {
+        _isLoading = false;
+        _allProducts.addAll(newProducts);
+        _hasMore = newProducts.length == 10;
+        _currentPage++;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: ${e.toString()}')));
+    }
+  }
+
+  @override
+  void dispose() {
+    _featuredController.dispose();
+    _categoryController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('DummyJSON Store')),
+      body: Scrollbar(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Auto-sliding Featured Products
+                _buildSectionTitle('Featured Products'),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 200,
+                  child: FutureBuilder<List<Product>>(
+                    future: context.read<ApiService>().getFeaturedProducts(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState != ConnectionState.done) {
+                        return _buildLoadingIndicator();
+                      }
+                      if (snapshot.hasError) {
+                        return _buildErrorWidget(snapshot.error.toString());
+                      }
+                      return PageView.builder(
+                        controller: _featuredController,
+                        itemCount: snapshot.data?.length ?? 0,
+                        itemBuilder: (ctx, index) {
+                          final product = snapshot.data![index];
+                          return _buildFeaturedCard(product);
+                        },
+                      );
+                    },
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // Auto-sliding Categories
+                _buildSectionTitle('Product Categories'),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 60,
+                  child: FutureBuilder<List<String>>(
+                    future: context.read<ApiService>().getCategories(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState != ConnectionState.done) {
+                        return _buildLoadingIndicator();
+                      }
+                      if (snapshot.hasError) {
+                        return _buildErrorWidget(snapshot.error.toString());
+                      }
+                      final categories = snapshot.data ?? [];
+                      return PageView.builder(
+                        controller: _categoryController,
+                        itemCount: (categories.length / 3).ceil(),
+                        itemBuilder: (ctx, pageIndex) {
+                          final start = pageIndex * 3;
+                          final end = (pageIndex + 1) * 3;
+                          final pageCategories = categories.sublist(
+                            start,
+                            end > categories.length ? categories.length : end,
+                          );
+                          return Row(
+                            children: pageCategories
+                                .map(
+                                  (category) => Expanded(
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 4,
+                                      ),
+                                      child: _buildCategoryChip(category),
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // Paginated Product Grid
+                _buildSectionTitle('All Products'),
+                const SizedBox(height: 8),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    childAspectRatio: 0.7,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                  ),
+                  itemCount: _allProducts.length + (_hasMore ? 1 : 0),
+                  itemBuilder: (ctx, index) {
+                    if (index >= _allProducts.length) {
+                      if (!_isLoading) _loadMoreProducts();
+                      return _buildLoadingIndicator();
+                    }
+                    return _buildProductCard(_allProducts[index]);
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Text(
+      title,
+      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+    );
+  }
+
+  Widget _buildFeaturedCard(Product product) {
+    // Check for error product
+    if (product.id == -1) {
+      return const Card(child: Center(child: Text('Product unavailable')));
+    }
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(12),
+              ),
+              child: Image.network(
+                product.thumbnail,
+                fit: BoxFit.cover,
+                width: double.infinity,
+                errorBuilder: (ctx, error, stackTrace) =>
+                    const Icon(Icons.broken_image),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  product.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '\$${product.price.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    color: Colors.blue[800],
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  product.category,
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryChip(String category) {
+    return Chip(
+      label: Text(category, style: const TextStyle(fontSize: 12)),
+      backgroundColor: Colors.blue[50],
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+    );
+  }
+
+  Widget _buildProductCard(Product product) {
+    return Card(
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Image.network(
+                product.thumbnail,
+                fit: BoxFit.contain,
+                errorBuilder: (ctx, error, stackTrace) =>
+                    const Icon(Icons.broken_image),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  product.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Text(
+                      '\$${product.price.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        color: Colors.blue[800],
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Spacer(),
+                    Icon(Icons.star, color: Colors.amber, size: 16),
+                    Text(
+                      product.rating.toStringAsFixed(1),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingIndicator() {
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: CircularProgressIndicator(),
+      ),
+    );
+  }
+
+  Widget _buildErrorWidget(String error) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text('Error: $error', style: const TextStyle(color: Colors.red)),
+      ),
+    );
+  }
+}
+
+
+
 1. Product Model
 First, let's create the product model:
 
