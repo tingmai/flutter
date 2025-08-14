@@ -1,0 +1,295 @@
+
+Place order
+=========================
+
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+class WooCommerceService {
+  final String baseUrl;
+  final String consumerKey;
+  final String consumerSecret;
+  final FlutterSecureStorage storage = const FlutterSecureStorage();
+
+  WooCommerceService({
+    required this.baseUrl,
+    required this.consumerKey,
+    required this.consumerSecret,
+  });
+
+  Future<Map<String, dynamic>> createOrder({
+    required String fullName,
+    required Map<String, dynamic> shippingAddress,
+    required String contactNumber,
+    required String email,
+    required double totalAmount,
+    List<Map<String, dynamic>>? lineItems,
+  }) async {
+    try {
+      final url = Uri.parse('$baseUrl/wp-json/wc/v3/orders');
+      
+      // Basic authentication
+      final credentials = base64Encode(
+        utf8.encode('$consumerKey:$consumerSecret'),
+      );
+
+      // Prepare order data
+      final orderData = {
+        'payment_method': 'cod',
+        'payment_method_title': 'Cash on Delivery',
+        'status': 'pending',
+        'customer_id': 0, // 0 for guest checkout
+        'billing': {
+          'first_name': fullName.split(' ').first,
+          'last_name': fullName.split(' ').length > 1 
+              ? fullName.split(' ').skip(1).join(' ') 
+              : '',
+          'email': email,
+          'phone': contactNumber,
+          'address_1': shippingAddress['address1'] ?? '',
+          'address_2': shippingAddress['address2'] ?? '',
+          'city': shippingAddress['city'] ?? '',
+          'state': shippingAddress['state'] ?? '',
+          'postcode': shippingAddress['postcode'] ?? '',
+          'country': shippingAddress['country'] ?? '',
+        },
+        'shipping': {
+          'first_name': fullName.split(' ').first,
+          'last_name': fullName.split(' ').length > 1 
+              ? fullName.split(' ').skip(1).join(' ') 
+              : '',
+          'address_1': shippingAddress['address1'] ?? '',
+          'address_2': shippingAddress['address2'] ?? '',
+          'city': shippingAddress['city'] ?? '',
+          'state': shippingAddress['state'] ?? '',
+          'postcode': shippingAddress['postcode'] ?? '',
+          'country': shippingAddress['country'] ?? '',
+        },
+        'line_items': lineItems ?? [],
+        'shipping_lines': [
+          {
+            'method_id': 'flat_rate',
+            'method_title': 'Flat Rate',
+            'total': '0.00',
+          }
+        ],
+        'total': totalAmount.toString(),
+      };
+
+      final response = await http.post(
+        url,
+        headers: {
+          'Authorization': 'Basic $credentials',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(orderData),
+      );
+
+      if (response.statusCode == 201) {
+        return jsonDecode(response.body);
+      } else {
+        throw Exception(
+            'Failed to create order. Status code: ${response.statusCode}, Response: ${response.body}');
+      }
+    } catch (e) {
+      throw Exception('Error creating order: $e');
+    }
+  }
+}
+
+
+
+===============
+
+
+
+
+import 'package:flutter/material.dart';
+import 'woocommerce_service.dart';
+
+class PlaceOrderScreen extends StatefulWidget {
+  final double totalAmount;
+  final List<Map<String, dynamic>> cartItems;
+
+  const PlaceOrderScreen({
+    Key? key,
+    required this.totalAmount,
+    required this.cartItems,
+  }) : super(key: key);
+
+  @override
+  _PlaceOrderScreenState createState() => _PlaceOrderScreenState();
+}
+
+class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final WooCommerceService wooService = WooCommerceService(
+    baseUrl: 'https://your-woocommerce-site.com', // Replace with your site URL
+    consumerKey: 'ck_your_consumer_key', // Replace with your consumer key
+    consumerSecret: 'cs_your_consumer_secret', // Replace with your consumer secret
+  );
+
+  // Form fields
+  String fullName = '';
+  String email = '';
+  String contactNumber = '';
+  String address1 = '';
+  String address2 = '';
+  String city = '';
+  String state = '';
+  String postcode = '';
+  String country = '';
+
+  bool _isLoading = false;
+
+  Future<void> _submitOrder() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final shippingAddress = {
+        'address1': address1,
+        'address2': address2,
+        'city': city,
+        'state': state,
+        'postcode': postcode,
+        'country': country,
+      };
+
+      // Convert cart items to line items format for WooCommerce
+      final lineItems = widget.cartItems.map((item) {
+        return {
+          'product_id': item['id'],
+          'quantity': item['quantity'],
+          'name': item['name'],
+          'price': item['price'],
+        };
+      }).toList();
+
+      final response = await wooService.createOrder(
+        fullName: fullName,
+        shippingAddress: shippingAddress,
+        contactNumber: contactNumber,
+        email: email,
+        totalAmount: widget.totalAmount,
+        lineItems: lineItems,
+      );
+
+      // Success - show confirmation
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Order placed successfully!')),
+      );
+
+      // Navigate to order confirmation screen or home
+      // Navigator.pushReplacement(...);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error placing order: $e')),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Place Order')),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextFormField(
+                decoration: const InputDecoration(labelText: 'Full Name'),
+                validator: (value) =>
+                    value!.isEmpty ? 'Please enter your name' : null,
+                onChanged: (value) => fullName = value,
+              ),
+              TextFormField(
+                decoration: const InputDecoration(labelText: 'Email'),
+                keyboardType: TextInputType.emailAddress,
+                validator: (value) =>
+                    value!.isEmpty || !value.contains('@')
+                        ? 'Please enter a valid email'
+                        : null,
+                onChanged: (value) => email = value,
+              ),
+              TextFormField(
+                decoration: const InputDecoration(labelText: 'Contact Number'),
+                keyboardType: TextInputType.phone,
+                validator: (value) =>
+                    value!.isEmpty ? 'Please enter your phone number' : null,
+                onChanged: (value) => contactNumber = value,
+              ),
+              const SizedBox(height: 20),
+              const Text('Shipping Address',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              TextFormField(
+                decoration: const InputDecoration(labelText: 'Address Line 1'),
+                validator: (value) =>
+                    value!.isEmpty ? 'Please enter your address' : null,
+                onChanged: (value) => address1 = value,
+              ),
+              TextFormField(
+                decoration: const InputDecoration(labelText: 'Address Line 2'),
+                onChanged: (value) => address2 = value,
+              ),
+              TextFormField(
+                decoration: const InputDecoration(labelText: 'City'),
+                validator: (value) =>
+                    value!.isEmpty ? 'Please enter your city' : null,
+                onChanged: (value) => city = value,
+              ),
+              TextFormField(
+                decoration: const InputDecoration(labelText: 'State/Province'),
+                validator: (value) =>
+                    value!.isEmpty ? 'Please enter your state' : null,
+                onChanged: (value) => state = value,
+              ),
+              TextFormField(
+                decoration: const InputDecoration(labelText: 'Postal Code'),
+                validator: (value) =>
+                    value!.isEmpty ? 'Please enter your postal code' : null,
+                onChanged: (value) => postcode = value,
+              ),
+              TextFormField(
+                decoration: const InputDecoration(labelText: 'Country'),
+                validator: (value) =>
+                    value!.isEmpty ? 'Please enter your country' : null,
+                onChanged: (value) => country = value,
+              ),
+              const SizedBox(height: 30),
+              Text('Total Amount: \$${widget.totalAmount.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: _isLoading ? null : _submitOrder,
+                child: _isLoading
+                    ? const CircularProgressIndicator()
+                    : const Text('Place Order'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+
+
+
+
+
+
